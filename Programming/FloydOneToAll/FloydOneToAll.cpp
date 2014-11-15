@@ -10,10 +10,12 @@
 using namespace std;
 
 vector<int> LoadFromFile();
+vector<int> GetInitialSequence(vector<int> &initialDistance);
 void PrintChrono(int &nodes, size_t qty, double &duration);
 void CreateGraph();
 
 int _nodes;
+int _nodesCount;
 
 
 int main(int argc, char* argv[])
@@ -27,7 +29,8 @@ int main(int argc, char* argv[])
 	MPI_Comm_size(MPI_COMM_WORLD, &mpiSize);
 	double startTime = MPI_Wtime();
 
-	vector<int> _graph = LoadFromFile();
+	vector<int> distanceMatrix = LoadFromFile();
+	vector<int> sequenceMatrix = GetInitialSequence(distanceMatrix);		//TODO
 
 	if (mpiRank == 0)
 	{
@@ -62,10 +65,41 @@ vector<int> LoadFromFile()
 	{
 		while (input >> number)
 		{
+			number = number == 0
+				? -1
+				: number;
 			numbers.push_back(number);
 			input.get();
 		}
 		input.close();
 	}
+
+	_nodesCount = sqrt(numbers.size());
+
+	int i = 0;
+	while (i < numbers.size())
+	{
+		//Replace all distances to self with 0
+		numbers[i] = 0;
+		i += (_nodesCount +1);
+	}
+
 	return numbers;
+}
+
+vector<int> GetInitialSequence(vector<int> &initialDistance)
+{
+	vector<int> initialSequence;
+
+	int i = 0;
+	while (i < initialDistance.size())
+	{
+		//Initial sequence filled with arrival node (direct link). If no connection between two nodes, then sequence set to -1
+		int toPush = initialDistance[i] == -1
+			? -1
+			: i % _nodesCount;
+		initialSequence.push_back(toPush);
+		++i;
+	}
+	return initialSequence;
 }
