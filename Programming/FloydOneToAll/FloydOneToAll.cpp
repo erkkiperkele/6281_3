@@ -9,19 +9,28 @@
 
 using namespace std;
 
-vector<int> LoadFromFile();
-vector<int> GetInitialSequence(vector<int> &initialDistance);
+vector<int> LoadInitialDistances();
+vector<int> GetInitialSequences(vector<int> &initialDistance);
 void PrintChrono(int &nodes, size_t qty, double &duration);
 void CreateGraph();
 
-int _nodes;
-int _nodesCount;
+void MpiGroupInit();
 
+
+int _nodesCount;		//Total number of nodes (sqrt(_pairs))
+int _pairs;				//Total number of pairs (matrix size)
+int p;					//Total number of active processes
+int k = 0;				//Current iteration
+
+MPI_Comm _mpiCommActiveProcesses;
+int mpiRank;
+int mpiSize;
 
 int main(int argc, char* argv[])
 {
-	int mpiRank;
-	int mpiSize;
+
+	vector<int> distanceMatrix;
+	vector<int> sequenceMatrix;
 
 	//initialize MPI, global variables and start chrono
 	MPI_Init(&argc, &argv);
@@ -29,8 +38,21 @@ int main(int argc, char* argv[])
 	MPI_Comm_size(MPI_COMM_WORLD, &mpiSize);
 	double startTime = MPI_Wtime();
 
-	vector<int> distanceMatrix = LoadFromFile();
-	vector<int> sequenceMatrix = GetInitialSequence(distanceMatrix);		//TODO
+	if (mpiRank == 0)
+	{
+		distanceMatrix = LoadInitialDistances();
+		sequenceMatrix = GetInitialSequences(distanceMatrix);
+	}
+	MpiGroupInit();
+	
+
+	MPI_Bcast(&_pairs, 1, MPI_INT, 0, _mpiCommActiveProcesses);
+
+	int *submatrix = new int[_pairs / p];				//MUST BE A BETTER WAY
+	MPI_Scatter(&distanceMatrix[0], _pairs / p, MPI_INT, &submatrix, _pairs / p, MPI_INT, 0, _mpiCommActiveProcesses);
+
+
+
 
 	if (mpiRank == 0)
 	{
@@ -54,7 +76,7 @@ void PrintChrono(int &nodes, size_t qty, double &duration)
 	myfile.close();
 }
 
-vector<int> LoadFromFile()
+vector<int> LoadInitialDistances()
 {
 	ifstream input("./input.txt", ios::in);
 
@@ -74,10 +96,11 @@ vector<int> LoadFromFile()
 		input.close();
 	}
 
-	_nodesCount = sqrt(numbers.size());
+	_pairs = numbers.size();
+	_nodesCount = sqrt(_pairs);
 
 	int i = 0;
-	while (i < numbers.size())
+	while (i < _pairs)
 	{
 		//Replace all distances to self with 0
 		numbers[i] = 0;
@@ -87,7 +110,7 @@ vector<int> LoadFromFile()
 	return numbers;
 }
 
-vector<int> GetInitialSequence(vector<int> &initialDistance)
+vector<int> GetInitialSequences(vector<int> &initialDistance)
 {
 	vector<int> initialSequence;
 
@@ -102,4 +125,38 @@ vector<int> GetInitialSequence(vector<int> &initialDistance)
 		++i;
 	}
 	return initialSequence;
+}
+
+void MpiGroupInit()
+{
+	MPI_Group world_group;
+	MPI_Comm_group(MPI_COMM_WORLD, &world_group);
+
+	p = mpiSize > _pairs
+		? _pairs
+		: pow((int)((int)sqrt(mpiSize) - (_nodesCount % (int)sqrt(mpiSize))), 2);
+
+
+	// Remove all unnecessary ranks
+	if (mpiSize - p > 0)
+	{
+		MPI_Group newGroup;
+		
+		vector<int> toExclude;
+		int i = p;
+		while (i < mpiSize)
+		{
+			toExclude.push_back(i);
+			++i;
+		}
+
+		MPI_Group_excl(world_group, mpiSize-p, &toExclude[0], &newGroup);
+
+		// Create a new communicator
+		MPI_Comm_create(MPI_COMM_WORLD, newGroup, &_mpiCommActiveProcesses);
+	}
+	else
+	{
+		MPI_Comm_dup(MPI_COMM_WORLD, &_mpiCommActiveProcesses);
+	}
 }
