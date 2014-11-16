@@ -11,6 +11,8 @@ using namespace std;
 
 vector<int> LoadInitialDistances();
 vector<int> GetInitialSequences(vector<int> &initialDistance);
+void ReorganizeMatrix(int * matrix, int size);
+
 void PrintChrono(int &nodes, size_t qty, double &duration);
 void CreateGraph();
 
@@ -42,14 +44,24 @@ int main(int argc, char* argv[])
 	{
 		distanceMatrix = LoadInitialDistances();
 		sequenceMatrix = GetInitialSequences(distanceMatrix);
-	}
-	MpiGroupInit();
-	
 
+	}
+
+	MpiGroupInit();
+
+	if (mpiRank == 0)
+	{
+		ReorganizeMatrix(&distanceMatrix[0], _pairs);
+	}
+
+	//Broadcast size of data
 	MPI_Bcast(&_pairs, 1, MPI_INT, 0, _mpiCommActiveProcesses);
 
-	int *submatrix = new int[_pairs / p];				//MUST BE A BETTER WAY
-	MPI_Scatter(&distanceMatrix[0], _pairs / p, MPI_INT, &submatrix, _pairs / p, MPI_INT, 0, _mpiCommActiveProcesses);
+	//Divide both matrices across processes
+	int *subdistance = new int[_pairs / p];				//MUST BE A BETTER WAY
+	int *subdsequence = new int[_pairs / p];			//MUST BE A BETTER WAY
+	MPI_Scatter(&distanceMatrix[0], _pairs / p, MPI_INT, &subdistance, _pairs / p, MPI_INT, 0, _mpiCommActiveProcesses);
+	MPI_Scatter(&sequenceMatrix[0], _pairs / p, MPI_INT, &subdsequence, _pairs / p, MPI_INT, 0, _mpiCommActiveProcesses);
 
 
 
@@ -66,6 +78,57 @@ int main(int argc, char* argv[])
 
 	MPI_Finalize();
 	return 0;
+}
+
+void ReorganizeMatrix(int * matrix, int size)
+{
+	vector<int> matrixTemp;
+	matrixTemp.assign(matrix, matrix + size);
+
+	p = 16;		//TO REMOVE: TEST ONLY
+	int row = 0;
+	int col = 0;
+	int subRowSize = sqrt(_pairs / p);
+	int rowSize = _nodesCount;
+	int prowSize = sqrt(p);
+
+	int subcol = 0;
+	int subrow = 0;
+	
+
+	int i = 0;
+	int j = 0;
+
+	//add each row of processes to the array
+	int prow = 0;
+	while (prow < prowSize)
+	{
+		//add each process of a row
+		int pcol = 0;
+		while (pcol < prowSize)
+		{
+			//add each row of a process
+			int subrowCount = 0;
+			while (subrowCount < subRowSize)
+			{
+				//add each element of a process row
+				int subcolCount = 0;
+				while (subcolCount < subRowSize)
+				{
+					matrixTemp[j] = matrix[i];
+					++i;
+					++j;
+					++subcolCount;
+				}
+				i += rowSize;
+				++subrowCount;
+			}
+			++pcol;
+			i = (subRowSize * pcol) + (prow * rowSize * prowSize);		//6 (p7 is in col 3 ) + 14 (p7 is in prow 1   
+		}
+		++prow;
+		i = prow * rowSize * prowSize;
+	}
 }
 
 void PrintChrono(int &nodes, size_t qty, double &duration)
