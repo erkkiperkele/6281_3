@@ -11,7 +11,7 @@ using namespace std;
 
 vector<int> LoadInitialDistances();
 vector<int> GetInitialSequences(vector<int> &initialDistance);
-void ReorganizeMatrix(int * matrix, int size);
+vector<int> SubDiviseAndReorganizeMatrix(int * matrix);
 
 void PrintChrono(int &nodes, size_t qty, double &duration);
 void CreateGraph();
@@ -44,14 +44,14 @@ int main(int argc, char* argv[])
 	{
 		distanceMatrix = LoadInitialDistances();
 		sequenceMatrix = GetInitialSequences(distanceMatrix);
-
 	}
 
 	MpiGroupInit();
 
 	if (mpiRank == 0)
 	{
-		ReorganizeMatrix(&distanceMatrix[0], _pairs);
+		distanceMatrix = SubDiviseAndReorganizeMatrix(&distanceMatrix[0]);
+		sequenceMatrix = SubDiviseAndReorganizeMatrix(&sequenceMatrix[0]);
 	}
 
 	//Broadcast size of data
@@ -80,12 +80,13 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
-void ReorganizeMatrix(int * matrix, int size)
+//PERF: Return pointer only to avoid copying it multiple times?
+vector<int> SubDiviseAndReorganizeMatrix(int * matrix)
 {
 	vector<int> matrixTemp;
-	matrixTemp.assign(matrix, matrix + size);
+	matrixTemp.assign(matrix, matrix + _pairs);
 
-	p = 16;		//TO REMOVE: TEST ONLY
+	p = 4;		//TO REMOVE: TEST ONLY
 	int row = 0;
 	int col = 0;
 	int subRowSize = sqrt(_pairs / p);
@@ -129,6 +130,7 @@ void ReorganizeMatrix(int * matrix, int size)
 		++prow;
 		i = prow * rowSize * subRowSize;
 	}
+	return matrixTemp;
 }
 
 void PrintChrono(int &nodes, size_t qty, double &duration)
