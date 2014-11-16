@@ -21,6 +21,7 @@ void MpiGroupInit();
 
 int _nodesCount;		//Total number of nodes (sqrt(_pairs))
 int _pairs;				//Total number of pairs (matrix size)
+int _pRows;				//Number of processes row (same as cols)
 int p;					//Total number of active processes
 int k = 0;				//Current iteration
 
@@ -59,19 +60,35 @@ int main(int argc, char* argv[])
 		DivideMatrix(&sequenceMatrix[0], _pairs, p);
 	}
 
+	//Send submatrices to processes
 	int *subdistance = new int[_pairs / p];				
 	int *subsequence = new int[_pairs / p];			
 	MPI_Scatter(&distanceMatrix[0], _pairs / p, MPI_INT, subdistance, _pairs / p, MPI_INT, 0, _mpiCommActiveProcesses);
 	MPI_Scatter(&sequenceMatrix[0], _pairs / p, MPI_INT, subsequence, _pairs / p, MPI_INT, 0, _mpiCommActiveProcesses);
-
-	//int i = 0;
-	//while (i < (_pairs / p) && mpiRank == 0)
-	//{
-	//	cout << "rank " << mpiRank << " - Received: " << endl;
+	
+	// COUT PROPERLY FORMATTED TO KEEP
 	//	cout << "rank " << mpiRank << " - distance: " << subdistance[i] << endl;
-	//	cout << "rank " << mpiRank << " - sequence: " << subsequence[i] << endl;
-	//	++i;
-	//}
+
+	_nodesCount = sqrt(_pairs);
+	_pRows = sqrt(p);
+
+	//Process position in row (x) and col (y)
+	int prow = mpiRank / _pRows;
+	int pcol = mpiRank % _pRows;
+
+	//Send data in columns
+	if (pcol == k)
+	{
+		cout << "rank " << mpiRank << " - pcol " << pcol << endl;
+		//Send col 0 to columnGroup
+	}
+
+	//Send data in rows
+	if (prow == k)
+	{
+		cout << "rank " << mpiRank << " - prow " << prow << endl;
+		//Send row 0 to rowGroup
+	}
 
 	MPI_Barrier(_mpiCommActiveProcesses);
 	if (mpiRank == 0)
