@@ -11,7 +11,7 @@ using namespace std;
 
 vector<int> LoadInitialDistances();
 vector<int> GetInitialSequences(vector<int> &initialDistance);
-vector<int> SubDiviseAndReorganizeMatrix(int * matrix);
+void DivideMatrix(int * matrix, int matrixSize, int submatricesCount);
 
 void PrintChrono(int &nodes, size_t qty, double &duration);
 void CreateGraph();
@@ -46,23 +46,23 @@ int main(int argc, char* argv[])
 		sequenceMatrix = GetInitialSequences(distanceMatrix);
 	}
 
+	//kill unnecessary processes. Create new group with active nodes only
 	MpiGroupInit();
 
+	//Divide both matrices into submatrices to send to processes
 	if (mpiRank == 0)
-	{
-		distanceMatrix = SubDiviseAndReorganizeMatrix(&distanceMatrix[0]);
-		sequenceMatrix = SubDiviseAndReorganizeMatrix(&sequenceMatrix[0]);
+	{ 
+		DivideMatrix(&distanceMatrix[0], _pairs, p);
+		DivideMatrix(&sequenceMatrix[0], _pairs, p);
 	}
 
 	//Broadcast size of data
 	MPI_Bcast(&_pairs, 1, MPI_INT, 0, _mpiCommActiveProcesses);
 
-	//Divide both matrices across processes
-	int *subdistance = new int[_pairs / p];				//MUST BE A BETTER WAY
-	int *subdsequence = new int[_pairs / p];			//MUST BE A BETTER WAY
+	int *subdistance = new int[_pairs / p];				
+	int *subdsequence = new int[_pairs / p];			
 	MPI_Scatter(&distanceMatrix[0], _pairs / p, MPI_INT, &subdistance, _pairs / p, MPI_INT, 0, _mpiCommActiveProcesses);
 	MPI_Scatter(&sequenceMatrix[0], _pairs / p, MPI_INT, &subdsequence, _pairs / p, MPI_INT, 0, _mpiCommActiveProcesses);
-
 
 
 
@@ -77,36 +77,37 @@ int main(int argc, char* argv[])
 	}
 
 	MPI_Finalize();
+
+	delete[] subdistance;
+	delete[] subdsequence;
+
 	return 0;
 }
 
-//PERF: Return pointer only to avoid copying it multiple times?
-vector<int> SubDiviseAndReorganizeMatrix(int * matrix)
+//																			0	1	2	3		0	1	4	5	
+//Divides the given matrix into submatrices									4	5	6	7	->	2	3	6	7
+// and reorganize it accordingly.											8	9	10	11		8	9	12	13
+//Submatrices are ordered by row (versus column)							12	13	14	15		10	11	14	15
+//
+void DivideMatrix(int * matrix, int matrixSize, int submatricesCount)
 {
 	vector<int> matrixTemp;
-	matrixTemp.assign(matrix, matrix + _pairs);
+	matrixTemp.assign(matrix, matrix + matrixSize);
 
-	p = 4;		//TO REMOVE: TEST ONLY
-	int row = 0;
-	int col = 0;
-	int subRowSize = sqrt(_pairs / p);
-	int rowSize = _nodesCount;
-	int prowSize = sqrt(p);
-
-	int subcol = 0;
-	int subrow = 0;
-	
-
+	//all matrices are square here therefore row and col have the same size
+	int subRowSize = sqrt(matrixSize / submatricesCount);		
+	int rowSize = sqrt(matrixSize);
+	int matricesPerRow = sqrt(submatricesCount);
 	int i = 0;
 	int j = 0;
 
 	//add each row of processes to the array
 	int prow = 0;
-	while (prow < prowSize)
+	while (prow < matricesPerRow)
 	{
 		//add each process of a row
 		int pcol = 0;
-		while (pcol < prowSize)
+		while (pcol < matricesPerRow)
 		{
 			//add each row of a process
 			int subrowCount = 0;
@@ -116,7 +117,7 @@ vector<int> SubDiviseAndReorganizeMatrix(int * matrix)
 				int subcolCount = 0;
 				while (subcolCount < subRowSize)
 				{
-					matrixTemp[j] = matrix[i];
+					matrix[j] = matrixTemp[i];
 					++i;
 					++j;
 					++subcolCount;
@@ -125,12 +126,11 @@ vector<int> SubDiviseAndReorganizeMatrix(int * matrix)
 				++subrowCount;
 			}
 			++pcol;
-			i = (subRowSize * pcol) + (prow * rowSize * subRowSize);		//6 (p7 is in col 3 ) + 14 (p7 is in prow 1   
+			i = (subRowSize * pcol) + (prow * rowSize * subRowSize);
 		}
 		++prow;
 		i = prow * rowSize * subRowSize;
 	}
-	return matrixTemp;
 }
 
 void PrintChrono(int &nodes, size_t qty, double &duration)
@@ -153,7 +153,7 @@ vector<int> LoadInitialDistances()
 		while (input >> number)
 		{
 			number = number == 0
-				? -1
+				? -1					//weight of 0 means there's no connection between those nodes
 				: number;
 			numbers.push_back(number);
 			input.get();
@@ -167,7 +167,7 @@ vector<int> LoadInitialDistances()
 	int i = 0;
 	while (i < _pairs)
 	{
-		//Replace all distances to self with 0
+		//Replace all distances to self with 0 instead of -1
 		numbers[i] = 0;
 		i += (_nodesCount +1);
 	}
@@ -185,7 +185,7 @@ vector<int> GetInitialSequences(vector<int> &initialDistance)
 		//Initial sequence filled with arrival node (direct link). If no connection between two nodes, then sequence set to -1
 		int toPush = initialDistance[i] == -1
 			? -1
-			: i % _nodesCount;
+			: i % _nodesCount;				//arrival node id
 		initialSequence.push_back(toPush);
 		++i;
 	}
