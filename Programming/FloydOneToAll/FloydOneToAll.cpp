@@ -26,6 +26,9 @@ int p;					//Total number of active processes
 int k = 0;				//Current iteration
 
 MPI_Comm _mpiCommActiveProcesses;
+vector<MPI_Comm> _mpiColProc;
+vector<MPI_Comm> _mpiRowProc;
+
 int mpiRank;
 int mpiSize;
 
@@ -80,6 +83,9 @@ int main(int argc, char* argv[])
 	if (pcol == k)
 	{
 		cout << "rank " << mpiRank << " - pcol " << pcol << endl;
+
+		//TODO: finish trying broadcasting!
+		MPI_Bcast(subdistance, _nodesCount / _pRows, MPI_INT, 0, MPI_COMM_WORLD);
 		//Send col 0 to columnGroup
 	}
 
@@ -218,6 +224,7 @@ void MpiGroupInit()
 	MPI_Group world_group;
 	MPI_Comm_group(MPI_COMM_WORLD, &world_group);
 
+	//TO VERIFY!!
 	p = mpiSize > _pairs
 		? _pairs
 		: pow((int)((int)sqrt(mpiSize) - (_nodesCount % (int)sqrt(mpiSize))), 2);
@@ -246,4 +253,53 @@ void MpiGroupInit()
 		MPI_Comm_dup(MPI_COMM_WORLD, &_mpiCommActiveProcesses);
 		cout << "rank " << mpiRank << " - just copying MPI_WORLD" << endl;
 	}
+
+	//LEGIT?
+	int colSize = (int)sqrt(p);
+	MPI_Comm *mpiColProc = new MPI_Comm[colSize];		//DELETE!
+	MPI_Comm *mpiRowProc = new MPI_Comm[colSize];		//DELETE!
+
+	int i = 0;
+	while (i < sqrt(p))
+	{
+		vector<int> colP;
+		vector<int> rowP;
+
+		int col = i;
+		while (col < p)
+		{
+			colP.push_back(col);
+			col += colSize;
+		}
+
+		int row = i * colSize;
+		while (row < i + colSize)
+		{
+			rowP.push_back(row);
+			++row;
+		}
+
+		MPI_Group world_group_col;
+		MPI_Comm_group(MPI_COMM_WORLD, &world_group_col);
+
+		MPI_Group world_group_row;
+		MPI_Comm_group(MPI_COMM_WORLD, &world_group_row);
+
+		MPI_Group colGroup;
+		MPI_Group_incl(world_group_col, colSize, &colP[0], &colGroup);
+
+		MPI_Group rowGroup;
+		MPI_Group_incl(world_group_row, colSize, &rowP[0], &rowGroup);
+
+		MPI_Comm_create(_mpiCommActiveProcesses, colGroup, &mpiColProc[i]);
+		MPI_Comm_create(_mpiCommActiveProcesses, rowGroup, &mpiRowProc[i]);
+
+		++i;
+	}
+	_mpiColProc.assign(mpiColProc, mpiColProc + colSize);
+	_mpiRowProc.assign(mpiRowProc, mpiRowProc + colSize);
+
+
+	//MPI_Comm_create(_mpiCommActiveProcesses, newGroup, &col);
+
 }
