@@ -46,40 +46,44 @@ int main(int argc, char* argv[])
 		sequenceMatrix = GetInitialSequences(distanceMatrix);
 	}
 
+	//Broadcast size of data
+	MPI_Bcast(&_pairs, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
 	//kill unnecessary processes. Create new group with active nodes only
 	MpiGroupInit();
 
-	//Divide both matrices into submatrices to send to processes
 	if (mpiRank == 0)
-	{ 
+	{
+		//Divide both matrices into submatrices to send to processes
 		DivideMatrix(&distanceMatrix[0], _pairs, p);
 		DivideMatrix(&sequenceMatrix[0], _pairs, p);
 	}
 
-	//Broadcast size of data
-	MPI_Bcast(&_pairs, 1, MPI_INT, 0, _mpiCommActiveProcesses);
-
 	int *subdistance = new int[_pairs / p];				
-	int *subdsequence = new int[_pairs / p];			
-	MPI_Scatter(&distanceMatrix[0], _pairs / p, MPI_INT, &subdistance, _pairs / p, MPI_INT, 0, _mpiCommActiveProcesses);
-	MPI_Scatter(&sequenceMatrix[0], _pairs / p, MPI_INT, &subdsequence, _pairs / p, MPI_INT, 0, _mpiCommActiveProcesses);
+	int *subsequence = new int[_pairs / p];			
+	MPI_Scatter(&distanceMatrix[0], _pairs / p, MPI_INT, subdistance, _pairs / p, MPI_INT, 0, _mpiCommActiveProcesses);
+	MPI_Scatter(&sequenceMatrix[0], _pairs / p, MPI_INT, subsequence, _pairs / p, MPI_INT, 0, _mpiCommActiveProcesses);
 
+	//int i = 0;
+	//while (i < (_pairs / p) && mpiRank == 0)
+	//{
+	//	cout << "rank " << mpiRank << " - Received: " << endl;
+	//	cout << "rank " << mpiRank << " - distance: " << subdistance[i] << endl;
+	//	cout << "rank " << mpiRank << " - sequence: " << subsequence[i] << endl;
+	//	++i;
+	//}
 
-
+	MPI_Barrier(_mpiCommActiveProcesses);
 	if (mpiRank == 0)
 	{
 		//Stop chrono and print results
 		double endTime = MPI_Wtime();
 		double duration = endTime - startTime;
-		cout << "test3" << endl;
 		cout << "Duration: " << duration << " seconds" << endl;
 		//		PrintChrono(mpiSize, graph.Count(), duration);
 	}
 
 	MPI_Finalize();
-
-	delete[] subdistance;
-	delete[] subdsequence;
 
 	return 0;
 }
@@ -223,5 +227,6 @@ void MpiGroupInit()
 	else
 	{
 		MPI_Comm_dup(MPI_COMM_WORLD, &_mpiCommActiveProcesses);
+		cout << "rank " << mpiRank << " - just copying MPI_WORLD" << endl;
 	}
 }
