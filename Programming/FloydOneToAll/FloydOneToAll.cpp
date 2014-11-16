@@ -120,14 +120,14 @@ void ReorganizeMatrix(int * matrix, int size)
 					++j;
 					++subcolCount;
 				}
-				i += rowSize;
+				i += rowSize - subRowSize;
 				++subrowCount;
 			}
 			++pcol;
-			i = (subRowSize * pcol) + (prow * rowSize * prowSize);		//6 (p7 is in col 3 ) + 14 (p7 is in prow 1   
+			i = (subRowSize * pcol) + (prow * rowSize * subRowSize);		//6 (p7 is in col 3 ) + 14 (p7 is in prow 1   
 		}
 		++prow;
-		i = prow * rowSize * prowSize;
+		i = prow * rowSize * subRowSize;
 	}
 }
 
