@@ -6,12 +6,17 @@
 #include <mpi.h>
 #include <cmath>
 #include <valarray> 
+#include <algorithm> 
 
 using namespace std;
 
 vector<int> LoadInitialDistances();
 vector<int> GetInitialSequences(vector<int> &initialDistance);
 void DivideMatrix(int * matrix, int matrixSize, int submatricesCount);
+
+void BroadcastRow(int *receivedRowDistance);
+void BroadcastCol(int *receivedColDistance);
+
 
 void PrintChrono(int &nodes, size_t qty, double &duration);
 void CreateGraph();
@@ -22,8 +27,9 @@ void MpiGroupInit();
 int _nodesCount;		//Total number of nodes (sqrt(_pairs))
 int _pairs;				//Total number of pairs (matrix size)
 int _pRows;				//Number of processes row (same as cols)
+int _pPairs;
 int p;					//Total number of active processes
-int k = 0;				//Current iteration
+int k = 0;				//Current iteration (one iteration per row/col of processor)
 
 MPI_Comm _mpiCommActiveProcesses;
 vector<MPI_Comm> _mpiColProc;
@@ -64,10 +70,10 @@ int main(int argc, char* argv[])
 	}
 
 	//Send submatrices to processes
-	int *subdistance = new int[_pairs / p];				
-	int *subsequence = new int[_pairs / p];			
-	MPI_Scatter(&distanceMatrix[0], _pairs / p, MPI_INT, subdistance, _pairs / p, MPI_INT, 0, _mpiCommActiveProcesses);
-	MPI_Scatter(&sequenceMatrix[0], _pairs / p, MPI_INT, subsequence, _pairs / p, MPI_INT, 0, _mpiCommActiveProcesses);
+	_pPairs = _pairs / p;
+	int *subdistance = new int[_pPairs];
+	int *subsequence = new int[_pPairs];
+	MPI_Scatter(&distanceMatrix[0], _pPairs, MPI_INT, subdistance, _pPairs, MPI_INT, 0, _mpiCommActiveProcesses);
 	
 	// COUT PROPERLY FORMATTED TO KEEP
 	//	cout << "rank " << mpiRank << " - distance: " << subdistance[i] << endl;
@@ -75,26 +81,46 @@ int main(int argc, char* argv[])
 	_nodesCount = sqrt(_pairs);
 	_pRows = sqrt(p);
 
-	//Process position in row (x) and col (y)
+	////Process position in row (x) and col (y)
 	int prow = mpiRank / _pRows;
 	int pcol = mpiRank % _pRows;
 
-	//Send data in columns
-	if (pcol == k)
-	{
-		cout << "rank " << mpiRank << " - pcol " << pcol << endl;
+	//Broadcast in rows
+	vector<int> receivedRowDistance;
+	receivedRowDistance.assign(subdistance, subdistance + _pPairs);
+	BroadcastRow(&receivedRowDistance[0]);
 
-		//TODO: finish trying broadcasting!
-		MPI_Bcast(subdistance, _nodesCount / _pRows, MPI_INT, 0, MPI_COMM_WORLD);
-		//Send col 0 to columnGroup
+	//Broadcast in cols
+	vector<int> receivedColDistance;
+	receivedColDistance.assign(subdistance, subdistance + _pPairs);
+	BroadcastCol(&receivedColDistance[0]);
+
+	//Calculate shortest path
+	if (pcol != k)
+	{
+		//Calculate for each subk what's shortest path for all values of subdistance
+		subdistance[subk] = min(subdistance[subk], receivedColDistance[subk] + receivedRowDistance[subk]);
+
+		//Update sequence if new path shorter that old path
+
 	}
 
-	//Send data in rows
-	if (prow == k)
-	{
-		cout << "rank " << mpiRank << " - prow " << prow << endl;
-		//Send row 0 to rowGroup
-	}
+
+	//if (pcol == k)
+	//{
+	//	cout << "rank " << mpiRank << " - pcol " << pcol << endl;
+
+	//	//TODO: finish trying broadcasting!
+	//	MPI_Bcast(subdistance, _nodesCount / _pRows, MPI_INT, 0, MPI_COMM_WORLD);
+	//	//Send col 0 to columnGroup
+	//}
+
+	////Send data in rows
+	//if (prow == k)
+	//{
+	//	cout << "rank " << mpiRank << " - prow " << prow << endl;
+	//	//Send row 0 to rowGroup
+	//}
 
 	MPI_Barrier(_mpiCommActiveProcesses);
 	if (mpiRank == 0)
@@ -157,6 +183,37 @@ void DivideMatrix(int * matrix, int matrixSize, int submatricesCount)
 		}
 		++prow;
 		i = prow * rowSize * subRowSize;
+	}
+}
+
+//PERF: those calls are synchronized, when they should be parallel...
+//Send data in rows
+void BroadcastRow(int *receivedRowDistance)
+{
+	int i = 0;
+	int col = 0;
+	
+	while (i < _pRows)
+	{
+		int broadcaster = col + (k * _pRows);
+		MPI_Bcast(receivedRowDistance, _nodesCount / _pRows, MPI_INT, broadcaster, _mpiRowProc[i]);
+		++col;
+		++i;
+	}
+}
+
+//PERF: those calls are synchronized, when they should be parallel...
+//Send data in columns
+void BroadcastCol(int *receivedColDistance)
+{
+	int j = 0;
+	int row = 0;
+	while (j < _pRows)
+	{
+		int broadcaster = (j * _pRows) + k;
+		MPI_Bcast(receivedColDistance, _nodesCount / _pRows, MPI_INT, broadcaster, _mpiColProc[j]);
+		++row;
+		++j;
 	}
 }
 
