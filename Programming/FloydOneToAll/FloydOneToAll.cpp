@@ -12,7 +12,7 @@ using namespace std;
 
 vector<int> LoadInitialDistances();
 vector<int> GetInitialSequences(vector<int> &initialDistance);
-void DivideMatrix(int * matrix, int matrixSize, int submatricesCount);
+void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount);
 
 void BroadcastRow(int *receivedRowDistance);
 void BroadcastCol(int *receivedColDistance);
@@ -66,8 +66,8 @@ int main(int argc, char* argv[])
 	if (mpiRank == 0)
 	{
 		//Divide both matrices into submatrices to send to processes
-		DivideMatrix(&distanceMatrix[0], _pairs, p);
-		DivideMatrix(&sequenceMatrix[0], _pairs, p);
+		DivideOrUnifyMatrix(&distanceMatrix[0], _pairs, p);
+		DivideOrUnifyMatrix(&sequenceMatrix[0], _pairs, p);
 	}
 
 	//Send submatrices to processes
@@ -76,6 +76,9 @@ int main(int argc, char* argv[])
 	int *subdistance = new int[_subPairs];
 	int *subsequence = new int[_subPairs];
 	MPI_Scatter(&distanceMatrix[0], _subPairs, MPI_INT, subdistance, _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
+	MPI_Scatter(&sequenceMatrix[0], _subPairs, MPI_INT, subsequence, _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
+	//PERF (TODO!): subsequence should be calculated per each processor! 
+	//Just need to adapt GetInitialSequence to enter the absolute coor from a relative position
 
 	// COUT PROPERLY FORMATTED TO KEEP
 	//	cout << "rank " << mpiRank << " - distance: " << subdistance[i] << endl;
@@ -131,6 +134,7 @@ int main(int argc, char* argv[])
 								int intermediateNodeAddress = (col % _subNodes) + (pcol * _subNodes);	//Need absolute address of intermediate node
 								subdistance[currentSubNode] = newPathDistance;
 								subsequence[currentSubNode] = intermediateNodeAddress;
+								//TODO: subsequence is not broadcasted. If not initialized, need to initalize value...
 							}
 						}
 						++row;
@@ -145,8 +149,18 @@ int main(int argc, char* argv[])
 		MPI_Barrier(_mpiCommActiveProcesses);
 	}
 
-	//TODO: Gather all submatrices into one and reassemble it
+	//Gather all submatrices into one
+	MPI_Gather(subdistance, _subPairs, MPI_INT, &distanceMatrix[0], _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
+	MPI_Gather(subsequence, _subPairs, MPI_INT, &sequenceMatrix[0], _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
 
+	//Reunify submatrices into an ordered one
+	if (mpiRank == 0)
+	{
+		DivideOrUnifyMatrix(&distanceMatrix[0], _pairs, p);
+		DivideOrUnifyMatrix(&sequenceMatrix[0], _pairs, p);
+	}
+
+	//Finalization (stop chrono, print time etc.
 	if (mpiRank == 0)
 	{
 		//Stop chrono and print results
@@ -161,12 +175,12 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
-//																			0	1	2	3		0	1	4	5	
-//Divides the given matrix into submatrices									4	5	6	7	->	2	3	6	7
-// and reorganize it accordingly.											8	9	10	11		8	9	12	13
-//Submatrices are ordered by row (versus column)							12	13	14	15		10	11	14	15
+//																			0	1	2	3		0	1	4	5			0	1	2	3
+//Divides the given matrix into submatrices									4	5	6	7	->	2	3	6	7		->	4	5	6	7
+// and reorganize it accordingly.											8	9	10	11		8	9	12	13			8	9	10	11
+//Submatrices are ordered by row (versus column)							12	13	14	15		10	11	14	15			12	13	14	15
 //
-void DivideMatrix(int * matrix, int matrixSize, int submatricesCount)
+void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount)
 {
 	vector<int> matrixTemp;
 	matrixTemp.assign(matrix, matrix + matrixSize);
