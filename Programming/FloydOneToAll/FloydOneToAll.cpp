@@ -11,11 +11,10 @@
 using namespace std;
 
 vector<int> LoadInitialDistances();
-vector<int> GetInitialSequences(vector<int> &initialDistance);
 void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount);
 
-void BroadcastRow(int *receivedRowDistance);
-void BroadcastCol(int *receivedColDistance);
+void GetRow(int *receivedRowMatrix);
+void GetCol(int *receivedColMatrix);
 
 
 void PrintChrono(int &nodes, size_t qty, double &duration);
@@ -33,8 +32,11 @@ int p;					//Total number of active processes
 int k = 0;				//Current iteration (one iteration per row/col of processor)
 
 MPI_Comm _mpiCommActiveProcesses;
-vector<MPI_Comm> _mpiColProc;
-vector<MPI_Comm> _mpiRowProc;
+MPI_Comm _mpiCommGrid;
+MPI_Comm _mpiCommRow;
+MPI_Comm _mpiCommCol;
+int _cartRank;
+int _pCoords[2];
 
 int mpiRank;
 int mpiSize;
@@ -43,7 +45,6 @@ int main(int argc, char* argv[])
 {
 
 	vector<int> distanceMatrix;
-	vector<int> sequenceMatrix;
 
 	//initialize MPI, global variables and start chrono
 	MPI_Init(&argc, &argv);
@@ -54,7 +55,6 @@ int main(int argc, char* argv[])
 	if (mpiRank == 0)
 	{
 		distanceMatrix = LoadInitialDistances();
-		sequenceMatrix = GetInitialSequences(distanceMatrix);
 	}
 
 	//Broadcast size of data
@@ -67,24 +67,17 @@ int main(int argc, char* argv[])
 	{
 		//Divide both matrices into submatrices to send to processes
 		DivideOrUnifyMatrix(&distanceMatrix[0], _pairs, p);
-		DivideOrUnifyMatrix(&sequenceMatrix[0], _pairs, p);
 	}
 
 	//Send submatrices to processes
 	_subPairs = _pairs / p;
 	_subNodes = sqrt(_subPairs);
 	int *subdistance = new int[_subPairs];
-	int *subsequence = new int[_subPairs];
 	MPI_Scatter(&distanceMatrix[0], _subPairs, MPI_INT, subdistance, _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
-	MPI_Scatter(&sequenceMatrix[0], _subPairs, MPI_INT, subsequence, _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
-	//PERF (TODO!): subsequence should be calculated per each processor! 
-	//Just need to adapt GetInitialSequence to enter the absolute coor from a relative position
 
 	// COUT PROPERLY FORMATTED TO KEEP
 	//	cout << "rank " << mpiRank << " - distance: " << subdistance[i] << endl;
 
-	_nodes = sqrt(_pairs);
-	_pRows = sqrt(p);
 
 	//Calculate the submatrices
 	while (k < _pRows)
@@ -96,12 +89,15 @@ int main(int argc, char* argv[])
 		//Broadcast in rows
 		vector<int> receivedRowDistance;
 		receivedRowDistance.assign(subdistance, subdistance + _subPairs);
-		BroadcastRow(&receivedRowDistance[0]);
+
+		cout << "rank " << mpiRank << " - about to broadcast: " << receivedRowDistance[0] << endl;
+		GetRow(&receivedRowDistance[0]);
+		cout << "rank " << mpiRank << " - received: " << receivedRowDistance[0] << endl;
 
 		//Broadcast in cols
 		vector<int> receivedColDistance;
 		receivedColDistance.assign(subdistance, subdistance + _subPairs);
-		BroadcastCol(&receivedColDistance[0]);
+		GetCol(&receivedColDistance[0]);
 
 		//Calculate shortest path
 		//TODO: rows and cols and subrow and subcols are all messed up for sure
@@ -129,12 +125,10 @@ int main(int argc, char* argv[])
 						{
 							int newPathDistance = receivedColDistance[col] + receivedRowDistance[row];	//TODO: I must have swapped them.
 
-							if (newPathDistance != subdistance[currentSubNode])
+							if (newPathDistance < subdistance[currentSubNode])
 							{
-								int intermediateNodeAddress = (col % _subNodes) + (pcol * _subNodes);	//Need absolute address of intermediate node
+								//int intermediateNodeAddress = (col % _subNodes) + (pcol * _subNodes);	//Need absolute address of intermediate node
 								subdistance[currentSubNode] = newPathDistance;
-								subsequence[currentSubNode] = intermediateNodeAddress;
-								//TODO: subsequence is not broadcasted. If not initialized, need to initalize value...
 							}
 						}
 						++row;
@@ -151,13 +145,11 @@ int main(int argc, char* argv[])
 
 	//Gather all submatrices into one
 	MPI_Gather(subdistance, _subPairs, MPI_INT, &distanceMatrix[0], _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
-	MPI_Gather(subsequence, _subPairs, MPI_INT, &sequenceMatrix[0], _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
 
 	//Reunify submatrices into an ordered one
 	if (mpiRank == 0)
 	{
 		DivideOrUnifyMatrix(&distanceMatrix[0], _pairs, p);
-		DivideOrUnifyMatrix(&sequenceMatrix[0], _pairs, p);
 	}
 
 	//Finalization (stop chrono, print time etc.
@@ -224,35 +216,20 @@ void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount)
 	}
 }
 
-//PERF: those calls are synchronized, when they should be parallel...
-//Send data in rows
-void BroadcastRow(int *receivedRowDistance)
+void GetRow(int *receivedRowMatrix)
 {
-	int i = 0;
-	int col = 0;
-
-	while (i < _pRows)
-	{
-		int broadcaster = col + (k * _pRows);
-		MPI_Bcast(receivedRowDistance, _nodes / _pRows, MPI_INT, broadcaster, _mpiRowProc[i]);
-		++col;
-		++i;
-	}
+	int senderCoor[2] = { mpiRank, k};
+	int senderRank;
+	MPI_Cart_rank(_mpiCommGrid, senderCoor, &senderRank);
+	MPI_Bcast(receivedRowMatrix, _subNodes, MPI_INT, senderRank, _mpiCommRow);
 }
 
-//PERF: those calls are synchronized, when they should be parallel...
-//Send data in columns
-void BroadcastCol(int *receivedColDistance)
+void GetCol(int *receivedColMatrix)
 {
-	int j = 0;
-	int row = 0;
-	while (j < _pRows)
-	{
-		int broadcaster = (j * _pRows) + k;
-		MPI_Bcast(receivedColDistance, _nodes / _pRows, MPI_INT, broadcaster, _mpiColProc[j]);
-		++row;
-		++j;
-	}
+	int senderCoor[2] = { k, mpiRank};
+	int senderRank;
+	MPI_Cart_rank(_mpiCommGrid, senderCoor, &senderRank);
+	MPI_Bcast(receivedColMatrix, _subNodes, MPI_INT, senderRank, _mpiCommRow);
 }
 
 void PrintChrono(int &nodes, size_t qty, double &duration)
@@ -324,6 +301,8 @@ void MpiGroupInit()
 		? _pairs
 		: pow((int)((int)sqrt(mpiSize) - (_nodes % (int)sqrt(mpiSize))), 2);
 
+	_pRows = sqrt(p);
+	_nodes = sqrt(_pairs);
 
 	// Remove all unnecessary ranks
 	if (mpiSize - p > 0)
@@ -349,52 +328,19 @@ void MpiGroupInit()
 		cout << "rank " << mpiRank << " - just copying MPI_WORLD" << endl;
 	}
 
-	//LEGIT?
-	int colSize = (int)sqrt(p);
-	MPI_Comm *mpiColProc = new MPI_Comm[colSize];		//DELETE!
-	MPI_Comm *mpiRowProc = new MPI_Comm[colSize];		//DELETE!
+	//Create Cartesian Grid comm
+	int pDim[2] = { _pRows, _pRows };
+	int periods[2] = { 0, 0 };
+	MPI_Cart_create(MPI_COMM_WORLD, 2, pDim, periods, 1, &_mpiCommGrid);
+	MPI_Comm_rank(_mpiCommGrid, &_cartRank);
+	MPI_Cart_coords(_mpiCommGrid, _cartRank, 2, _pCoords);
 
-	int i = 0;
-	while (i < sqrt(p))
-	{
-		vector<int> colP;
-		vector<int> rowP;
+	//Create Rows comm
+	int keepRows[2] = { 0, 1 };
+	MPI_Cart_sub(_mpiCommGrid, keepRows, &_mpiCommRow);
 
-		int col = i;
-		while (col < p)
-		{
-			colP.push_back(col);
-			col += colSize;
-		}
-
-		int row = i * colSize;
-		while (row < i + colSize)
-		{
-			rowP.push_back(row);
-			++row;
-		}
-
-		MPI_Group world_group_col;
-		MPI_Comm_group(MPI_COMM_WORLD, &world_group_col);
-
-		MPI_Group world_group_row;
-		MPI_Comm_group(MPI_COMM_WORLD, &world_group_row);
-
-		MPI_Group colGroup;
-		MPI_Group_incl(world_group_col, colSize, &colP[0], &colGroup);
-
-		MPI_Group rowGroup;
-		MPI_Group_incl(world_group_row, colSize, &rowP[0], &rowGroup);
-
-		MPI_Comm_create(_mpiCommActiveProcesses, colGroup, &mpiColProc[i]);
-		MPI_Comm_create(_mpiCommActiveProcesses, rowGroup, &mpiRowProc[i]);
-
-		++i;
-	}
-	_mpiColProc.assign(mpiColProc, mpiColProc + colSize);
-	_mpiRowProc.assign(mpiRowProc, mpiRowProc + colSize);
-
-
-	//MPI_Comm_create(_mpiCommActiveProcesses, newGroup, &col);
+	//Create Cols comm
+	int keepCols[2] = { 1, 0 };
+	MPI_Cart_sub(_mpiCommGrid, keepCols, &_mpiCommCol);
 
 }
