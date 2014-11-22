@@ -13,8 +13,8 @@ using namespace std;
 vector<int> LoadInitialDistances();
 void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount);
 
-void GetRow(int *receivedRowMatrix);
-void GetCol(int *receivedColMatrix);
+void GetRowMatrix(int *receivedRowMatrix);
+void GetColMatrix(int *receivedColMatrix);
 
 
 void PrintChrono(int &nodes, size_t qty, double &duration);
@@ -90,14 +90,20 @@ int main(int argc, char* argv[])
 		vector<int> receivedRowDistance;
 		receivedRowDistance.assign(subdistance, subdistance + _subPairs);
 
-		cout << "rank " << mpiRank << " - about to broadcast: " << receivedRowDistance[0] << endl;
-		GetRow(&receivedRowDistance[0]);
-		cout << "rank " << mpiRank << " - received: " << receivedRowDistance[0] << endl;
+		//cout << "rank " << mpiRank << " - about to broadcast: " << receivedRowDistance[0] << endl;
+		GetRowMatrix(&receivedRowDistance[0]);
+		//cout << "rank " << mpiRank << " - received: " << receivedRowDistance[0] << endl;
+
+		//TOREMOVE TEST ONLY: Cutting short
+		MPI_Barrier(_mpiCommActiveProcesses);
+		MPI_Finalize();
+		return 0;
+		//END OF TOREMOVE TEST ONLY: Cutting short
 
 		//Broadcast in cols
 		vector<int> receivedColDistance;
 		receivedColDistance.assign(subdistance, subdistance + _subPairs);
-		GetCol(&receivedColDistance[0]);
+		GetColMatrix(&receivedColDistance[0]);
 
 		//Calculate shortest path
 		//TODO: rows and cols and subrow and subcols are all messed up for sure
@@ -216,17 +222,21 @@ void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount)
 	}
 }
 
-void GetRow(int *receivedRowMatrix)
+void GetRowMatrix(int *receivedRowMatrix)
 {
-	int senderCoor[2] = { mpiRank, k};
+	int senderCoor[2] = { k, _pCoords[1] };
 	int senderRank;
 	MPI_Cart_rank(_mpiCommGrid, senderCoor, &senderRank);
+
+	cout << "rank " << mpiRank << " - senderCoor: " << senderCoor[0] << ", " << senderCoor[1] << endl;
+	cout << "rank " << mpiRank << " - senderRank: " << senderRank << endl;
+
 	MPI_Bcast(receivedRowMatrix, _subNodes, MPI_INT, senderRank, _mpiCommRow);
 }
 
-void GetCol(int *receivedColMatrix)
+void GetColMatrix(int *receivedColMatrix)
 {
-	int senderCoor[2] = { k, mpiRank};
+	int senderCoor[2] = { _pCoords[0], k };
 	int senderRank;
 	MPI_Cart_rank(_mpiCommGrid, senderCoor, &senderRank);
 	MPI_Bcast(receivedColMatrix, _subNodes, MPI_INT, senderRank, _mpiCommRow);
@@ -325,7 +335,6 @@ void MpiGroupInit()
 	else
 	{
 		MPI_Comm_dup(MPI_COMM_WORLD, &_mpiCommActiveProcesses);
-		cout << "rank " << mpiRank << " - just copying MPI_WORLD" << endl;
 	}
 
 	//Create Cartesian Grid comm
@@ -342,5 +351,4 @@ void MpiGroupInit()
 	//Create Cols comm
 	int keepCols[2] = { 1, 0 };
 	MPI_Cart_sub(_mpiCommGrid, keepCols, &_mpiCommCol);
-
 }
