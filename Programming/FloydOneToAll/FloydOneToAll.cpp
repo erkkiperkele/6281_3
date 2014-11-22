@@ -37,6 +37,8 @@ MPI_Comm _mpiCommRow;
 MPI_Comm _mpiCommCol;
 int _cartRank;
 int _pCoords[2];
+int _rowRank;
+int _colRank;
 
 int mpiRank;
 int mpiSize;
@@ -65,12 +67,11 @@ int main(int argc, char* argv[])
 
 	if (mpiRank == 0)
 	{
-		//Divide both matrices into submatrices to send to processes
+		//Divide the matrix into submatrices to send to processes
 		DivideOrUnifyMatrix(&distanceMatrix[0], _pairs, p);
 	}
 
 	//Send submatrices to processes
-	
 	int *subdistance = new int[_subPairs];
 	MPI_Scatter(&distanceMatrix[0], _subPairs, MPI_INT, subdistance, _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
 
@@ -85,30 +86,38 @@ int main(int argc, char* argv[])
 		int pcol = mpiRank % _pRows;
 
 		//Broadcast in rows
-		int rowRank;
-		MPI_Comm_rank(_mpiCommCol, &rowRank);
 		vector<int> receivedRowDistance(_subPairs);
-
-		if (rowRank == k)
+		if (_rowRank == k)
 		{
-			cout << "rank " << mpiRank << " - init submatrix to send - rowRank: " << rowRank << endl;
-			//Initialize row submatrix to broadcast
+			cout << "rank " << mpiRank << " - init submatrix to send - rowRank: " << _rowRank << endl;
 			receivedRowDistance.assign(subdistance, subdistance + _subPairs);
 		}
 
 		GetRowMatrix(&receivedRowDistance[0]);
 
 		//Broadcast in cols
-		int colRank;
-		MPI_Comm_rank(_mpiCommRow, &colRank);
+		
 		vector<int> receivedColDistance(_subPairs);
 
-		if (colRank == k)	//TEMP
+		if (_colRank == k)
 		{
-			cout << "rank " << mpiRank << " - init submatrix to send - colRank: " << colRank << endl;
+			cout << "rank " << mpiRank << " - init submatrix to send - colRank: " << _colRank << endl;
 			receivedColDistance.assign(subdistance, subdistance + _subPairs);
 		}
 		GetColMatrix(&receivedColDistance[0]);
+
+		if (_cartRank == 15)
+		{
+			for (int i = 0; i < _subPairs; ++i)
+			{
+				cout << "rank " << mpiRank << " - _subPairs: " << _subPairs << endl;
+				cout << "rank " << mpiRank << " - myvalue: " << subdistance[i] << endl;
+				cout << "rank " << mpiRank << " - rowValue: " << receivedRowDistance[i] << endl;
+				cout << "rank " << mpiRank << " - colValue: " << receivedColDistance[i] << endl;
+			}
+		}
+
+
 
 		//TOREMOVE TEST ONLY: Cutting short
 		MPI_Barrier(_mpiCommActiveProcesses);
@@ -333,9 +342,11 @@ void MpiGroupInit()
 
 	//Create Rows comm
 	int keepRows[2] = { 0, 1 };
-	int keepCols[2] = { 1, 0 };
 	MPI_Cart_sub(_mpiCommGrid, keepRows, &_mpiCommRow);
+	MPI_Comm_rank(_mpiCommRow, &_colRank);
 
 	//Create Cols comm
+	int keepCols[2] = { 1, 0 };
 	MPI_Cart_sub(_mpiCommGrid, keepCols, &_mpiCommCol);
+	MPI_Comm_rank(_mpiCommCol, &_rowRank);
 }
