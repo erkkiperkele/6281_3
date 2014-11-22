@@ -76,7 +76,7 @@ int main(int argc, char* argv[])
 	MPI_Scatter(&distanceMatrix[0], _subPairs, MPI_INT, subdistance, _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
 
 	// COUT PROPERLY FORMATTED TO KEEP
-	//	cout << "rank " << mpiRank << " - distance: " << subdistance[i] << endl;
+	//cout << "rank " << mpiRank << " | iteration " << k << " - init submatrix to send - rowRank: " << _rowRank << endl;
 
 	//Calculate the submatrices
 	while (k < _pRows)
@@ -89,7 +89,7 @@ int main(int argc, char* argv[])
 		vector<int> receivedRowDistance(_subPairs);
 		if (_rowRank == k)
 		{
-			cout << "rank " << mpiRank << " - init submatrix to send - rowRank: " << _rowRank << endl;
+			//cout << "rank " << mpiRank << " | iteration " << k << " - init submatrix to send - rowRank: " << _rowRank << endl;
 			receivedRowDistance.assign(subdistance, subdistance + _subPairs);
 		}
 
@@ -101,12 +101,13 @@ int main(int argc, char* argv[])
 
 		if (_colRank == k)
 		{
-			cout << "rank " << mpiRank << " - init submatrix to send - colRank: " << _colRank << endl;
+			//cout << "rank " << mpiRank << " | iteration " << k << " - init submatrix to send - colRank: " << _colRank << endl;
 			receivedColDistance.assign(subdistance, subdistance + _subPairs);
 		}
+
 		GetColMatrix(&receivedColDistance[0]);
 
-		if (_cartRank == 15)
+		/*if (_cartRank == 6)
 		{
 			for (int i = 0; i < _subPairs; ++i)
 			{
@@ -115,45 +116,50 @@ int main(int argc, char* argv[])
 				cout << "rank " << mpiRank << " - rowValue: " << receivedRowDistance[i] << endl;
 				cout << "rank " << mpiRank << " - colValue: " << receivedColDistance[i] << endl;
 			}
-		}
+		}*/
 
 
 
-		//TOREMOVE TEST ONLY: Cutting short
-		MPI_Barrier(_mpiCommActiveProcesses);
-		MPI_Finalize();
-		return 0;
-		//END OF TOREMOVE TEST ONLY: Cutting short
+		////TOREMOVE TEST ONLY: Cutting short
+		//MPI_Barrier(_mpiCommActiveProcesses);
+		//MPI_Finalize();
+		//return 0;
+		////END OF TOREMOVE TEST ONLY: Cutting shorts
+
+
 
 		//Calculate shortest path
 		//TODO: rows and cols and subrow and subcols are all messed up for sure
-		if (pcol != k && prow != k)
+			//if (pcol != k && prow != k)
+		if (_colRank != k && _rowRank != k)
 		{
-			int subNode = 0;
+			//int subNode = 0;
 			int subk = 0;
-			int currentSubNode = 0;
 			//Updating the full submatrix at each sub iteration.
 			while (subk < _subNodes)
 			{
 				//Calculating the distance to intermediate node
 				int col = subk;
+				int currentSubNode = 0;
 				while (col < _subPairs)
 				{
 					//calculating the distance from intermediate node to destination
 					int row = subk * _subNodes;
 					while (row < (_subNodes * (subk + 1)))
 					{
-						int subcol = subNode / _subNodes;
-						int subrow = subNode % _subNodes;
-						bool isSelf = (pcol * _subNodes + subcol) == (prow * _subNodes + subrow);
+						int subcol = currentSubNode / _subNodes;
+						int subrow = currentSubNode % _subNodes;
+						int coordX = pcol * _subNodes + subcol;
+						int coordY = prow * _subNodes + subrow;
+						bool isSelf = coordX == coordY;
 
 						if (!isSelf)
 						{
-							int newPathDistance = receivedColDistance[col] + receivedRowDistance[row];	//TODO: I must have swapped them.
 
+							int newPathDistance = receivedColDistance[col] + receivedRowDistance[row];	//TODO: I must have swapped them.
+							
 							if (newPathDistance < subdistance[currentSubNode])
 							{
-								//int intermediateNodeAddress = (col % _subNodes) + (pcol * _subNodes);	//Need absolute address of intermediate node
 								subdistance[currentSubNode] = newPathDistance;
 							}
 						}
