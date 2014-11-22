@@ -38,9 +38,6 @@ MPI_Comm _mpiCommCol;
 int _cartRank;
 int _pCoords[2];
 
-//int keepRows[2] = { 0, 1 };
-//int keepCols[2] = { 1, 0 };
-
 int mpiRank;
 int mpiSize;
 
@@ -80,7 +77,6 @@ int main(int argc, char* argv[])
 	// COUT PROPERLY FORMATTED TO KEEP
 	//	cout << "rank " << mpiRank << " - distance: " << subdistance[i] << endl;
 
-
 	//Calculate the submatrices
 	while (k < _pRows)
 	{
@@ -89,18 +85,29 @@ int main(int argc, char* argv[])
 		int pcol = mpiRank % _pRows;
 
 		//Broadcast in rows
+		int rowRank;
+		MPI_Comm_rank(_mpiCommCol, &rowRank);
 		vector<int> receivedRowDistance(_subPairs);
 
-		if (_cartRank == 3 || _cartRank == 1 || _cartRank == 2 || _cartRank == 0)	//TEMP
+		if (rowRank == k)
+		{
+			cout << "rank " << mpiRank << " - init submatrix to send - rowRank: " << rowRank << endl;
+			//Initialize row submatrix to broadcast
 			receivedRowDistance.assign(subdistance, subdistance + _subPairs);
+		}
 
-		//cout << "rank " << mpiRank << " - about to broadcast: " << receivedRowDistance[0] << endl;
 		GetRowMatrix(&receivedRowDistance[0]);
-		//cout << "rank " << mpiRank << " - received: " << receivedRowDistance[0] << endl;
 
 		//Broadcast in cols
-		vector<int> receivedColDistance;
-		receivedColDistance.assign(subdistance, subdistance + _subPairs);
+		int colRank;
+		MPI_Comm_rank(_mpiCommRow, &colRank);
+		vector<int> receivedColDistance(_subPairs);
+
+		if (colRank == k)	//TEMP
+		{
+			cout << "rank " << mpiRank << " - init submatrix to send - colRank: " << colRank << endl;
+			receivedColDistance.assign(subdistance, subdistance + _subPairs);
+		}
 		GetColMatrix(&receivedColDistance[0]);
 
 		//TOREMOVE TEST ONLY: Cutting short
@@ -255,8 +262,9 @@ vector<int> LoadInitialDistances()
 	{
 		while (input >> number)
 		{
+			//weight of 0 means there's no connection between those nodes
 			number = number == 0
-				? -1					//weight of 0 means there's no connection between those nodes
+				? -1					
 				: number;
 			numbers.push_back(number);
 			input.get();
@@ -278,22 +286,6 @@ vector<int> LoadInitialDistances()
 	return numbers;
 }
 
-vector<int> GetInitialSequences(vector<int> &initialDistance)
-{
-	vector<int> initialSequence;
-
-	int i = 0;
-	while (i < initialDistance.size())
-	{
-		//Initial sequence filled with arrival node (direct link). If no connection between two nodes, then sequence set to -1
-		int toPush = initialDistance[i] == -1
-			? -1
-			: i % _nodes;				//arrival node id
-		initialSequence.push_back(toPush);
-		++i;
-	}
-	return initialSequence;
-}
 
 void MpiGroupInit()
 {
