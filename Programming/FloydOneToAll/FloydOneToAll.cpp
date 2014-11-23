@@ -337,16 +337,13 @@ void MpiGroupInit()
 	MPI_Comm_group(MPI_COMM_WORLD, &world_group);
 
 	_nodes = sqrt(_pairs);
-
-	//int nodesPerProcess = _pairs / mpiSize;		//mpiSize: number of processes given
-	//_pRows = sqrt(_pairs) / nodesPerProcess;	//_Rows: number of processes per row of the matrix 
-	//p = pow(_pRows, 2);							//number of processes I can use
-
-	p = mpiSize > _pairs
-		? _pairs
-		: pow((int)((int)sqrt(mpiSize) - (_nodes % (int)sqrt(mpiSize))), 2);
-
-	_pRows = sqrt(p);
+    _pRows = sqrt(mpiSize);
+    while (_nodes %  _pRows > 0)
+    {
+        --_pRows;
+    }
+    p = pow(_pRows, 2);
+    
 	_subPairs = _pairs / p;
 	_subNodes = sqrt(_subPairs);
 
@@ -374,15 +371,16 @@ void MpiGroupInit()
 			MPI_Finalize();
 			return;
 		}
-		if (mpiRank == 0)
-		{
-			cout << "remaining active processes: " << p << " / " << mpiSize << endl;
-		}
 	}
 	else
 	{
 		MPI_Comm_dup(MPI_COMM_WORLD, &_mpiCommActiveProcesses);
 	}
+    
+    if (mpiRank == 0)
+    {
+        cout << "remaining active processes: " << p << " / " << mpiSize << endl;
+    }
 
 	//Create Cartesian Grid comm
 	int pDim[2] = { _pRows, _pRows };
