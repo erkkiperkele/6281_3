@@ -64,10 +64,10 @@ int main(int argc, char* argv[])
 
 	//kill unnecessary processes. Create new group with active nodes only
 	MpiGroupInit();
-
-	//MPI_Barrier(MPI_COMM_WORLD);
 	if (mpiRank >= p)
+    {
 		return 0;
+    }
 
 	if (_cartRank == 0)
 	{
@@ -126,7 +126,7 @@ int main(int argc, char* argv[])
 
 			GetRowMatrix(&receivedRowDistance[0]);
 
-			//PERF: Broadcast 2 values only instead of 4!!
+			//PERF: Broadcast single col instead of all cols of submatrix
 			//Broadcast in cols
 			vector<int> receivedColDistance(_subPairs);
 			if (_colRank == k)
@@ -330,7 +330,6 @@ vector<int> LoadInitialDistances()
 	return numbers;
 }
 
-//TODO: Entering too many processes doesn't work
 void MpiGroupInit()
 {
 	MPI_Group world_group;
@@ -338,6 +337,8 @@ void MpiGroupInit()
 
 	_nodes = sqrt(_pairs);
     _pRows = sqrt(mpiSize);
+    
+    //PERF: There's a better way
     while (_nodes %  _pRows > 0)
     {
         --_pRows;
