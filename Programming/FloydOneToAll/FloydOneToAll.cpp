@@ -108,6 +108,8 @@ int main(int argc, char* argv[])
 		int pcol = mpiRank % _pRows;
 
 		//Broadcast in rows
+		//TODO: Broadcast on each subiteration!!!
+		//TODO: Broadcast 2 values only instead of 4!!
 		vector<int> receivedRowDistance(_subPairs);
 		if (_rowRank == k)
 		{
@@ -128,13 +130,13 @@ int main(int argc, char* argv[])
 
 		/*if (_cartRank == 6)
 		{
-			for (int i = 0; i < _subPairs; ++i)
-			{
-				cout << "rank " << mpiRank << " - _subPairs: " << _subPairs << endl;
-				cout << "rank " << mpiRank << " - myvalue: " << subdistance[i] << endl;
-				cout << "rank " << mpiRank << " - rowValue: " << receivedRowDistance[i] << endl;
-				cout << "rank " << mpiRank << " - colValue: " << receivedColDistance[i] << endl;
-			}
+		for (int i = 0; i < _subPairs; ++i)
+		{
+		cout << "rank " << mpiRank << " - _subPairs: " << _subPairs << endl;
+		cout << "rank " << mpiRank << " - myvalue: " << subdistance[i] << endl;
+		cout << "rank " << mpiRank << " - rowValue: " << receivedRowDistance[i] << endl;
+		cout << "rank " << mpiRank << " - colValue: " << receivedColDistance[i] << endl;
+		}
 		}*/
 
 		////TOREMOVE TEST ONLY: Cutting short
@@ -144,46 +146,67 @@ int main(int argc, char* argv[])
 		////END OF TOREMOVE TEST ONLY: Cutting shorts
 
 		//Calculate shortest path
-		if (_colRank != k && _rowRank != k)
+		int subk = 0;
+		//Updating the full submatrix at each sub iteration.
+		while (subk < _subNodes)
 		{
-			//int subNode = 0;
-			int subk = 0;
-			//Updating the full submatrix at each sub iteration.
-			while (subk < _subNodes)
+			//Calculating the distance to intermediate node
+			int col = subk;
+			int currentSubNode = 0;
+			while (col < _subPairs)
 			{
-				//Calculating the distance to intermediate node
-				int col = subk;
-				int currentSubNode = 0;
-				while (col < _subPairs)
+				//calculating the distance from intermediate node to destination
+				int row = subk * _subNodes;
+				while (row < (_subNodes * (subk + 1)))
 				{
-					//calculating the distance from intermediate node to destination
-					int row = subk * _subNodes;
-					while (row < (_subNodes * (subk + 1)))
-					{
-						int subcol = currentSubNode / _subNodes;
-						int subrow = currentSubNode % _subNodes;
-						int coordX = pcol * _subNodes + subcol;
-						int coordY = prow * _subNodes + subrow;
-						bool isSelf = coordX == coordY;
+					int subcol = currentSubNode / _subNodes;
+					int subrow = currentSubNode % _subNodes;
+					int coordX = pcol * _subNodes + subcol;
+					int coordY = prow * _subNodes + subrow;
+					bool isSelf = coordX == coordY;
 
-						if (!isSelf && receivedColDistance[col] > 0 && receivedRowDistance[row] > 0)
-						{
-							
-							int newPathDistance = receivedColDistance[col] + receivedRowDistance[row];	//TODO: I must have swapped them.
-							
-							if (newPathDistance < subdistance[currentSubNode])
-							{
-								subdistance[currentSubNode] = newPathDistance;
-							}
-						}
-						++row;
-						++currentSubNode;
+					//TEST ONLY
+					if (mpiRank == 5 && coordX == 5 && coordY == 3)
+					{
+						int newPathDistance = receivedColDistance[col] + receivedRowDistance[row];	//TODO: I must have swapped them.
+						cout << "rank " << mpiRank << " | iteration " << k
+							<< " - X " << coordX << " - Y " << coordY
+							<< " intermediate: " << k * _subNodes + subk
+							<< " old: " << subdistance[currentSubNode]
+							<< " col: " << receivedColDistance[col]
+							<< " row: " << receivedRowDistance[row]
+							<< " new: " << newPathDistance
+							<< endl;
 					}
-					col += _subNodes;
+					//END OF TEST ONLY
+
+					if (!isSelf && receivedColDistance[col] > 0 && receivedRowDistance[row] > 0)
+					{
+
+						int newPathDistance = receivedColDistance[col] + receivedRowDistance[row];	//TODO: I must have swapped them.
+
+						/*cout << "rank " << mpiRank << " | iteration " << k
+							<< " - coordX " << coordX << " - coordY " << coordY
+							<< " old: " << subdistance[currentSubNode] << " new: " << newPathDistance
+							<< endl;*/
+
+						if (newPathDistance < subdistance[currentSubNode])
+						{
+							subdistance[currentSubNode] = newPathDistance;
+						}
+						if (subdistance[currentSubNode] < 0)
+						{
+							subdistance[currentSubNode] = newPathDistance;
+						}
+					}
+					++row;
+					++currentSubNode;
 				}
-				++subk;
+				col += _subNodes;
 			}
+			++subk;
 		}
+		//}
 		++k;
 		MPI_Barrier(_mpiCommActiveProcesses);
 	}
@@ -318,7 +341,7 @@ vector<int> LoadInitialDistances()
 		{
 			//weight of 0 means there's no connection between those nodes
 			number = number == 0
-				? -1					
+				? -1
 				: number;
 			numbers.push_back(number);
 			input.get();
