@@ -107,49 +107,31 @@ int main(int argc, char* argv[])
 		int prow = mpiRank / _pRows;
 		int pcol = mpiRank % _pRows;
 
-		//Broadcast in rows
-		//TODO: Broadcast on each subiteration!!!
-		//TODO: Broadcast 2 values only instead of 4!!
-		vector<int> receivedRowDistance(_subPairs);
-		if (_rowRank == k)
-		{
-			receivedRowDistance.assign(subdistance, subdistance + _subPairs);
-		}
-
-		GetRowMatrix(&receivedRowDistance[0]);
-
-		//Broadcast in cols
-		vector<int> receivedColDistance(_subPairs);
-		if (_colRank == k)
-		{
-			//cout << "rank " << mpiRank << " | iteration " << k << " - init submatrix to send - colRank: " << _colRank << endl;
-			receivedColDistance.assign(subdistance, subdistance + _subPairs);
-		}
-
-		GetColMatrix(&receivedColDistance[0]);
-
-		/*if (_cartRank == 6)
-		{
-		for (int i = 0; i < _subPairs; ++i)
-		{
-		cout << "rank " << mpiRank << " - _subPairs: " << _subPairs << endl;
-		cout << "rank " << mpiRank << " - myvalue: " << subdistance[i] << endl;
-		cout << "rank " << mpiRank << " - rowValue: " << receivedRowDistance[i] << endl;
-		cout << "rank " << mpiRank << " - colValue: " << receivedColDistance[i] << endl;
-		}
-		}*/
-
-		////TOREMOVE TEST ONLY: Cutting short
-		//MPI_Barrier(_mpiCommActiveProcesses);
-		//MPI_Finalize();
-		//return 0;
-		////END OF TOREMOVE TEST ONLY: Cutting shorts
-
 		//Calculate shortest path
-		int subk = 0;
 		//Updating the full submatrix at each sub iteration.
+		int subk = 0;
 		while (subk < _subNodes)
 		{
+			//PERF: Broadcast 2 values only instead of 4!!
+			//Broadcast in rows
+			vector<int> receivedRowDistance(_subPairs);
+			if (_rowRank == k)
+			{
+				receivedRowDistance.assign(subdistance, subdistance + _subPairs);
+			}
+
+			GetRowMatrix(&receivedRowDistance[0]);
+
+			//PERF: Broadcast 2 values only instead of 4!!
+			//Broadcast in cols
+			vector<int> receivedColDistance(_subPairs);
+			if (_colRank == k)
+			{
+				receivedColDistance.assign(subdistance, subdistance + _subPairs);
+			}
+
+			GetColMatrix(&receivedColDistance[0]);
+
 			//Calculating the distance to intermediate node
 			int col = subk;
 			int currentSubNode = 0;
@@ -165,36 +147,18 @@ int main(int argc, char* argv[])
 					int coordY = prow * _subNodes + subrow;
 					bool isSelf = coordX == coordY;
 
-					//TEST ONLY
-					if (mpiRank == 5 && coordX == 5 && coordY == 3)
-					{
-						int newPathDistance = receivedColDistance[col] + receivedRowDistance[row];	//TODO: I must have swapped them.
-						cout << "rank " << mpiRank << " | iteration " << k
-							<< " - X " << coordX << " - Y " << coordY
-							<< " intermediate: " << k * _subNodes + subk
-							<< " old: " << subdistance[currentSubNode]
-							<< " col: " << receivedColDistance[col]
-							<< " row: " << receivedRowDistance[row]
-							<< " new: " << newPathDistance
-							<< endl;
-					}
-					//END OF TEST ONLY
-
 					if (!isSelf && receivedColDistance[col] > 0 && receivedRowDistance[row] > 0)
 					{
 
-						int newPathDistance = receivedColDistance[col] + receivedRowDistance[row];	//TODO: I must have swapped them.
-
-						/*cout << "rank " << mpiRank << " | iteration " << k
-							<< " - coordX " << coordX << " - coordY " << coordY
-							<< " old: " << subdistance[currentSubNode] << " new: " << newPathDistance
-							<< endl;*/
+						int newPathDistance = receivedColDistance[col] + receivedRowDistance[row];
 
 						if (newPathDistance < subdistance[currentSubNode])
 						{
 							subdistance[currentSubNode] = newPathDistance;
 						}
-						if (subdistance[currentSubNode] < 0)
+
+						//-1 means there's no connection. Therefore any other value is better
+						if (subdistance[currentSubNode] < 0)					
 						{
 							subdistance[currentSubNode] = newPathDistance;
 						}
@@ -206,7 +170,6 @@ int main(int argc, char* argv[])
 			}
 			++subk;
 		}
-		//}
 		++k;
 		MPI_Barrier(_mpiCommActiveProcesses);
 	}
