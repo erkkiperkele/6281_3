@@ -11,7 +11,7 @@
 using namespace std;
 
 vector<int> LoadInitialDistances();
-void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount);
+void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount, bool isDividing);
 
 void GetRowMatrix(int *receivedRowMatrix);
 void GetColMatrix(int *receivedColMatrix);
@@ -67,8 +67,30 @@ int main(int argc, char* argv[])
 
 	if (mpiRank == 0)
 	{
+		//Print matrix:
+		cout << "Before division" << endl;
+		for (int i = 0; i < _pairs; ++i)
+		{
+			cout << distanceMatrix[i] << "\t";
+			if (i % _nodes == (_nodes - 1))
+				cout << endl;
+		}
+		cout << endl << endl;
+		//End of print matrix
+
 		//Divide the matrix into submatrices to send to processes
-		DivideOrUnifyMatrix(&distanceMatrix[0], _pairs, p);
+		DivideOrUnifyMatrix(&distanceMatrix[0], _pairs, p, true);
+
+		//Print matrix:
+		cout << "After division reorganizing" << endl;
+		for (int i = 0; i < _pairs; ++i)
+		{
+			cout << distanceMatrix[i] << "\t";
+			if (i % _nodes == (_nodes - 1))
+				cout << endl;
+		}
+		cout << endl << endl;
+		//End of print matrix
 	}
 
 	//Send submatrices to processes
@@ -89,16 +111,13 @@ int main(int argc, char* argv[])
 		vector<int> receivedRowDistance(_subPairs);
 		if (_rowRank == k)
 		{
-			//cout << "rank " << mpiRank << " | iteration " << k << " - init submatrix to send - rowRank: " << _rowRank << endl;
 			receivedRowDistance.assign(subdistance, subdistance + _subPairs);
 		}
 
 		GetRowMatrix(&receivedRowDistance[0]);
 
 		//Broadcast in cols
-		
 		vector<int> receivedColDistance(_subPairs);
-
 		if (_colRank == k)
 		{
 			//cout << "rank " << mpiRank << " | iteration " << k << " - init submatrix to send - colRank: " << _colRank << endl;
@@ -118,19 +137,13 @@ int main(int argc, char* argv[])
 			}
 		}*/
 
-
-
 		////TOREMOVE TEST ONLY: Cutting short
 		//MPI_Barrier(_mpiCommActiveProcesses);
 		//MPI_Finalize();
 		//return 0;
 		////END OF TOREMOVE TEST ONLY: Cutting shorts
 
-
-
 		//Calculate shortest path
-		//TODO: rows and cols and subrow and subcols are all messed up for sure
-			//if (pcol != k && prow != k)
 		if (_colRank != k && _rowRank != k)
 		{
 			//int subNode = 0;
@@ -153,9 +166,9 @@ int main(int argc, char* argv[])
 						int coordY = prow * _subNodes + subrow;
 						bool isSelf = coordX == coordY;
 
-						if (!isSelf)
+						if (!isSelf && receivedColDistance[col] > 0 && receivedRowDistance[row] > 0)
 						{
-
+							
 							int newPathDistance = receivedColDistance[col] + receivedRowDistance[row];	//TODO: I must have swapped them.
 							
 							if (newPathDistance < subdistance[currentSubNode])
@@ -181,17 +194,37 @@ int main(int argc, char* argv[])
 	//Reunify submatrices into an ordered one
 	if (mpiRank == 0)
 	{
-		DivideOrUnifyMatrix(&distanceMatrix[0], _pairs, p);
+		//Print matrix:
+		cout << "Before reorganizing" << endl;
+		for (int i = 0; i < _pairs; ++i)
+		{
+			cout << distanceMatrix[i] << "\t";
+			if (i % _nodes == (_nodes - 1))
+				cout << endl;
+		}
+		cout << endl << endl;
+
+		DivideOrUnifyMatrix(&distanceMatrix[0], _pairs, p, false);
+
+		//Print matrix:
+		cout << "Final" << endl;
+		for (int i = 0; i < _pairs; ++i)
+		{
+			cout << distanceMatrix[i] << "\t";
+			if (i % _nodes == (_nodes - 1))
+				cout << endl;
+		}
 	}
 
-	//Finalization (stop chrono, print time etc.
+
+	//Finalization (stop chrono, print time etc)
 	if (mpiRank == 0)
 	{
 		//Stop chrono and print results
 		double endTime = MPI_Wtime();
 		double duration = endTime - startTime;
 		cout << "Duration: " << duration << " seconds" << endl;
-		//		PrintChrono(mpiSize, graph.Count(), duration);
+		//PrintChrono(mpiSize, graph.Count(), duration);
 	}
 
 	MPI_Finalize();
@@ -204,7 +237,7 @@ int main(int argc, char* argv[])
 // and reorganize it accordingly.											8	9	10	11		8	9	12	13			8	9	10	11
 //Submatrices are ordered by row (versus column)							12	13	14	15		10	11	14	15			12	13	14	15
 //
-void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount)
+void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount, bool isDividing)
 {
 	vector<int> matrixTemp;
 	matrixTemp.assign(matrix, matrix + matrixSize);
@@ -232,7 +265,13 @@ void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount)
 				int subcolCount = 0;
 				while (subcolCount < subRowSize)
 				{
-					matrix[j] = matrixTemp[i];
+					int posMatrix = isDividing
+						? j
+						: i;
+					int posTemp = isDividing
+						? i
+						: j;
+					matrix[posMatrix] = matrixTemp[posTemp];
 					++i;
 					++j;
 					++subcolCount;
@@ -301,7 +340,7 @@ vector<int> LoadInitialDistances()
 	return numbers;
 }
 
-
+//TODO: Entering too many processes doesn't work
 void MpiGroupInit()
 {
 	MPI_Group world_group;
