@@ -65,7 +65,11 @@ int main(int argc, char* argv[])
 	//kill unnecessary processes. Create new group with active nodes only
 	MpiGroupInit();
 
-	if (mpiRank == 0)
+	//MPI_Barrier(MPI_COMM_WORLD);
+	if (mpiRank >= p)
+		return 0;
+
+	if (_cartRank == 0)
 	{
 		//Print matrix:
 		cout << "Before division" << endl;
@@ -98,14 +102,14 @@ int main(int argc, char* argv[])
 	MPI_Scatter(&distanceMatrix[0], _subPairs, MPI_INT, subdistance, _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
 
 	// COUT PROPERLY FORMATTED TO KEEP
-	//cout << "rank " << mpiRank << " | iteration " << k << " - init submatrix to send - rowRank: " << _rowRank << endl;
+	//cout << "rank " << _cartRank << " | iteration " << k << " - init submatrix to send - rowRank: " << _rowRank << endl;
 
 	//Calculate the submatrices
 	while (k < _pRows)
 	{
 		////Process position in row (x) and col (y)
-		int prow = mpiRank / _pRows;
-		int pcol = mpiRank % _pRows;
+		int prow = _cartRank / _pRows;
+		int pcol = _cartRank % _pRows;
 
 		//Calculate shortest path
 		//Updating the full submatrix at each sub iteration.
@@ -178,7 +182,7 @@ int main(int argc, char* argv[])
 	MPI_Gather(subdistance, _subPairs, MPI_INT, &distanceMatrix[0], _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
 
 	//Reunify submatrices into an ordered one
-	if (mpiRank == 0)
+	if (_cartRank == 0)
 	{
 		//Print matrix:
 		cout << "Before reorganizing" << endl;
@@ -204,7 +208,7 @@ int main(int argc, char* argv[])
 
 
 	//Finalization (stop chrono, print time etc)
-	if (mpiRank == 0)
+	if (_cartRank == 0)
 	{
 		//Stop chrono and print results
 		double endTime = MPI_Wtime();
@@ -332,7 +336,12 @@ void MpiGroupInit()
 	MPI_Group world_group;
 	MPI_Comm_group(MPI_COMM_WORLD, &world_group);
 
-	//TO VERIFY!!
+	_nodes = sqrt(_pairs);
+
+	//int nodesPerProcess = _pairs / mpiSize;		//mpiSize: number of processes given
+	//_pRows = sqrt(_pairs) / nodesPerProcess;	//_Rows: number of processes per row of the matrix 
+	//p = pow(_pRows, 2);							//number of processes I can use
+
 	p = mpiSize > _pairs
 		? _pairs
 		: pow((int)((int)sqrt(mpiSize) - (_nodes % (int)sqrt(mpiSize))), 2);
@@ -344,8 +353,6 @@ void MpiGroupInit()
 	// Remove all unnecessary ranks
 	if (mpiSize - p > 0)
 	{
-		MPI_Group newGroup;
-
 		vector<int> toExclude;
 		int i = p;
 		while (i < mpiSize)
@@ -354,10 +361,23 @@ void MpiGroupInit()
 			++i;
 		}
 
-		MPI_Group_excl(world_group, mpiSize - p, &toExclude[0], &newGroup);
+		MPI_Group newGroup;
+		MPI_Group_excl(world_group, toExclude.size(), &toExclude[0], &newGroup);
 
 		// Create a new communicator
 		MPI_Comm_create(MPI_COMM_WORLD, newGroup, &_mpiCommActiveProcesses);
+
+		//Abort excluded processes
+		if (mpiRank >= p)
+		{
+			cout << "aborting process: " << mpiRank << endl;
+			MPI_Finalize();
+			return;
+		}
+		if (mpiRank == 0)
+		{
+			cout << "remaining active processes: " << p << " / " << mpiSize << endl;
+		}
 	}
 	else
 	{
@@ -367,7 +387,7 @@ void MpiGroupInit()
 	//Create Cartesian Grid comm
 	int pDim[2] = { _pRows, _pRows };
 	int periods[2] = { 0, 0 };
-	MPI_Cart_create(MPI_COMM_WORLD, 2, pDim, periods, 0, &_mpiCommGrid);
+	MPI_Cart_create(_mpiCommActiveProcesses, 2, pDim, periods, 1, &_mpiCommGrid);
 	MPI_Comm_rank(_mpiCommGrid, &_cartRank);
 	MPI_Cart_coords(_mpiCommGrid, _cartRank, 2, _pCoords);
 
