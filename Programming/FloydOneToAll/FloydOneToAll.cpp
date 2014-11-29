@@ -83,6 +83,11 @@ int main(int argc, char* argv[])
 	//Calculate the submatrices
 	while (k < _pRows)
 	{
+		//Visual feedback to indicate progress every 50th node
+		if (_cartRank == 0)
+		{
+			cout << "iteration " << k+1 << "/" << _pRows << endl;
+		}
 		////Process position in row (x) and col (y)
 		int prow = _cartRank / _pRows;
 		int pcol = _cartRank % _pRows;
@@ -303,7 +308,6 @@ void MpiGroupInit()
 {
 	MPI_Group world_group;
 	MPI_Comm_group(MPI_COMM_WORLD, &world_group);
-
 	_nodes = sqrt(_pairs);
     _pRows = sqrt(mpiSize);
     
