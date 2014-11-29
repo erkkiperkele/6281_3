@@ -17,7 +17,8 @@ void GetRowMatrix(int *receivedRowMatrix);
 void GetColMatrix(int *receivedColMatrix);
 
 
-void PrintChrono(int &nodes, size_t qty, double &duration);
+void PrintChrono(double &duration);
+void PrintResults(int* distanceMatrix);
 void CreateGraph();
 
 void MpiGroupInit();
@@ -71,38 +72,13 @@ int main(int argc, char* argv[])
 
 	if (_cartRank == 0)
 	{
-		//Print matrix:
-		cout << "Before division" << endl;
-		for (int i = 0; i < _pairs; ++i)
-		{
-			cout << distanceMatrix[i] << "\t";
-			if (i % _nodes == (_nodes - 1))
-				cout << endl;
-		}
-		cout << endl << endl;
-		//End of print matrix
-
 		//Divide the matrix into submatrices to send to processes
 		DivideOrUnifyMatrix(&distanceMatrix[0], _pairs, p, true);
-
-		//Print matrix:
-		cout << "After division reorganizing" << endl;
-		for (int i = 0; i < _pairs; ++i)
-		{
-			cout << distanceMatrix[i] << "\t";
-			if (i % _nodes == (_nodes - 1))
-				cout << endl;
-		}
-		cout << endl << endl;
-		//End of print matrix
 	}
 
 	//Send submatrices to processes
 	int *subdistance = new int[_subPairs];
 	MPI_Scatter(&distanceMatrix[0], _subPairs, MPI_INT, subdistance, _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
-
-	// COUT PROPERLY FORMATTED TO KEEP
-	//cout << "rank " << _cartRank << " | iteration " << k << " - init submatrix to send - rowRank: " << _rowRank << endl;
 
 	//Calculate the submatrices
 	while (k < _pRows)
@@ -181,51 +157,27 @@ int main(int argc, char* argv[])
 	//Gather all submatrices into one
 	MPI_Gather(subdistance, _subPairs, MPI_INT, &distanceMatrix[0], _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
 
-	//Reunify submatrices into an ordered one
 	if (_cartRank == 0)
 	{
-		//Print matrix:
-		cout << "Before reorganizing" << endl;
-		for (int i = 0; i < _pairs; ++i)
-		{
-			cout << distanceMatrix[i] << "\t";
-			if (i % _nodes == (_nodes - 1))
-				cout << endl;
-		}
-		cout << endl << endl;
-
+		//Reunify submatrices into an ordered one
 		DivideOrUnifyMatrix(&distanceMatrix[0], _pairs, p, false);
 
-		//Print matrix:
-		cout << "Final" << endl;
-		for (int i = 0; i < _pairs; ++i)
-		{
-			cout << distanceMatrix[i] << "\t";
-			if (i % _nodes == (_nodes - 1))
-				cout << endl;
-		}
-	}
-
-
-	//Finalization (stop chrono, print time etc)
-	if (_cartRank == 0)
-	{
-		//Stop chrono and print results
+		//Finalization (stop chrono, print time and results)
 		double endTime = MPI_Wtime();
 		double duration = endTime - startTime;
 		cout << "Duration: " << duration << " seconds" << endl;
-		//PrintChrono(mpiSize, graph.Count(), duration);
+		PrintChrono(duration);
+		PrintResults(&distanceMatrix[0]);
 	}
 
 	MPI_Finalize();
-
 	return 0;
 }
 
-//																			0	1	2	3		0	1	4	5			0	1	2	3
-//Divides the given matrix into submatrices									4	5	6	7	->	2	3	6	7		->	4	5	6	7
-// and reorganize it accordingly.											8	9	10	11		8	9	12	13			8	9	10	11
-//Submatrices are ordered by row (versus column)							12	13	14	15		10	11	14	15			12	13	14	15
+//													0	1	2	3		0	1	4	5			0	1	2	3
+//Divides the given matrix into submatrices			4	5	6	7	->	2	3	6	7		->	4	5	6	7
+// and reorganize it accordingly.					8	9	10	11		8	9	12	13			8	9	10	11
+//Submatrices are ordered by row (versus column)	12	13	14	15		10	11	14	15			12	13	14	15
 //
 void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount, bool isDividing)
 {
@@ -287,11 +239,28 @@ void GetColMatrix(int *receivedColMatrix)
 	MPI_Bcast(receivedColMatrix, _subPairs, MPI_INT, k, _mpiCommRow);
 }
 
-void PrintChrono(int &nodes, size_t qty, double &duration)
+void PrintChrono(double &duration)
 {
 	ofstream myfile;
 	myfile.open("./FloydOneToAllChrono.csv", ios::app);
-	myfile << nodes << "\t" << qty << "\t" << duration << "\n";
+	myfile << p << "\t" << _nodes << "\t"  << duration << "\n";
+	myfile.close();
+}
+
+void PrintResults(int* distanceMatrix)
+{
+	ofstream myfile;
+	myfile.open("./output.txt", ios::out);
+
+	//Print matrix:
+	myfile << "Final" << endl;
+	for (int i = 0; i < _pairs; ++i)
+	{
+		myfile << distanceMatrix[i] << "\t";
+		if (i % _nodes == (_nodes - 1))
+			myfile << endl;
+	}
+
 	myfile.close();
 }
 
