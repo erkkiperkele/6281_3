@@ -13,17 +13,15 @@ using namespace std;
 vector<int> LoadInitialDistances();
 void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount, bool isDividing);
 
-void GetRowMatrix(int *receivedRowMatrix);
-void GetColMatrix(int *receivedColMatrix);
 void FloydPipeline(int * subdistance);
-
+int* PropagateRow(int * subdistance);
+int* PropagateCol(int * subdistance);
 
 void PrintChrono(double &duration);
 void PrintResults(int* distanceMatrix);
 void CreateGraph();
 
 void MpiGroupInit();
-
 
 int _nodes;				//Total number of nodes (sqrt(_pairs))
 int _pairs;				//Total number of pairs (matrix size)
@@ -67,9 +65,9 @@ int main(int argc, char* argv[])
 	//kill unnecessary processes. Create new group with active nodes only
 	MpiGroupInit();
 	if (mpiRank >= p)
-    {
+	{
 		return 0;
-    }
+	}
 
 	if (_cartRank == 0)
 	{
@@ -82,7 +80,7 @@ int main(int argc, char* argv[])
 	MPI_Scatter(&distanceMatrix[0], _subPairs, MPI_INT, subdistance, _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
 
 	FloydPipeline(subdistance);
-	
+
 	//Gather all submatrices into one
 	MPI_Gather(subdistance, _subPairs, MPI_INT, &distanceMatrix[0], _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
 
@@ -103,6 +101,7 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
+//TODO: Bad copypasting from OneToAll
 void FloydPipeline(int * subdistance)
 {
 	//Calculate the submatrices
@@ -122,25 +121,11 @@ void FloydPipeline(int * subdistance)
 		int subk = 0;
 		while (subk < _subNodes)
 		{
-			//PERF: Broadcast 2 values only instead of 4!!
-			//Broadcast in rows
-			vector<int> receivedRowDistance(_subPairs);
-			if (_rowRank == k)
-			{
-				receivedRowDistance.assign(subdistance, subdistance + _subPairs);
-			}
+			//Propagate to rows
+			int * receivedRowDistance = PropagateRow(&subdistance[0]);
 
-			GetRowMatrix(&receivedRowDistance[0]);
-
-			//PERF: Broadcast single col instead of all cols of submatrix
-			//Broadcast in cols
-			vector<int> receivedColDistance(_subPairs);
-			if (_colRank == k)
-			{
-				receivedColDistance.assign(subdistance, subdistance + _subPairs);
-			}
-
-			GetColMatrix(&receivedColDistance[0]);
+			//Propagate to cols
+			int * receivedColDistance = PropagateCol(&subdistance[0]);
 
 			//Calculating the distance to intermediate node
 			int col = subk;
@@ -183,6 +168,80 @@ void FloydPipeline(int * subdistance)
 		++k;
 		MPI_Barrier(_mpiCommActiveProcesses);
 	}
+}
+
+//PERF: don't propagate full submatrix
+int* PropagateRow(int * subdistance)
+{
+	int previous = _rowRank - 1;
+	int next = _rowRank + 1;
+	vector<int> receivedRowDistance(_subPairs);
+
+	MPI_Request sendRequestNext;
+	MPI_Request sendRequestPrevious;
+	MPI_Status status;
+
+	if (_rowRank == k)
+	{
+		cout << "Rank | _rowRank: " << _cartRank << " | " << _rowRank << " - prepare data to send" << endl;
+		receivedRowDistance.assign(subdistance, subdistance + _subPairs);
+	}
+
+	else
+	{
+		cout << "Rank | _rowRank: " << _cartRank << " | " << _rowRank << " - receive data from: " << k << endl;
+		int sender = _rowRank > k
+			? previous
+			: next;
+		MPI_Recv(&receivedRowDistance[0], _subPairs, MPI_INT, sender, 0, _mpiCommCol, &status);
+	}
+
+	if (_rowRank >= k && next < _subNodes)
+	{
+		MPI_Isend(&receivedRowDistance[0], _subPairs, MPI_INT, next, 0, _mpiCommCol, &sendRequestNext);
+	}
+	if (_rowRank <= k && previous >= 0)
+	{
+		MPI_Isend(&receivedRowDistance[0], _subPairs, MPI_INT, previous, 0, _mpiCommCol, &sendRequestPrevious);
+	}
+
+	return &receivedRowDistance[0];
+}
+
+//PERF: don't propagate full submatrix
+int* PropagateCol(int * subdistance)
+{
+	int previous = _colRank - 1;
+	int next = _colRank + 1;
+	vector<int> receivedColDistance(_subPairs);
+
+	MPI_Request sendRequestNext;
+	MPI_Request sendRequestPrevious;
+	MPI_Status status;
+
+	if (_colRank == k)
+	{
+		receivedColDistance.assign(subdistance, subdistance + _subPairs);
+	}
+
+	else
+	{
+		MPI_Recv(&receivedColDistance[0], _subPairs, MPI_INT, k, 0, _mpiCommRow, &status);
+	}
+
+	//Current rank sends on both directions
+	if (_colRank >= k && next < _subNodes)
+	{
+		MPI_Isend(&receivedColDistance[0], _subPairs, MPI_INT, next, 0, _mpiCommRow, &sendRequestNext);
+	}
+
+	//Other ranks send only to the direction opposite to the current rank (propagating the data)
+	if (_colRank <= k && previous >= 0)
+	{
+		MPI_Isend(&receivedColDistance[0], _subPairs, MPI_INT, previous, 0, _mpiCommRow, &sendRequestPrevious);
+	}
+
+	return &receivedColDistance[0];
 }
 
 //													0	1	2	3		0	1	4	5			0	1	2	3
@@ -240,21 +299,11 @@ void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount, boo
 	}
 }
 
-void GetRowMatrix(int *receivedRowMatrix)
-{
-	MPI_Bcast(receivedRowMatrix, _subPairs, MPI_INT, k, _mpiCommCol);
-}
-
-void GetColMatrix(int *receivedColMatrix)
-{
-	MPI_Bcast(receivedColMatrix, _subPairs, MPI_INT, k, _mpiCommRow);
-}
-
 void PrintChrono(double &duration)
 {
 	ofstream myfile;
 	myfile.open("./FloydOneToAllChrono.csv", ios::app);
-	myfile << p << "\t" << _nodes << "\t"  << duration << "\n";
+	myfile << p << "\t" << _nodes << "\t" << duration << "\n";
 	myfile.close();
 }
 
@@ -315,15 +364,15 @@ void MpiGroupInit()
 	MPI_Group world_group;
 	MPI_Comm_group(MPI_COMM_WORLD, &world_group);
 	_nodes = sqrt(_pairs);
-    _pRows = sqrt(mpiSize);
-    
-    //PERF: There's a better way
-    while (_nodes %  _pRows > 0)
-    {
-        --_pRows;
-    }
-    p = pow(_pRows, 2);
-    
+	_pRows = sqrt(mpiSize);
+
+	//PERF: There's a better way
+	while (_nodes %  _pRows > 0)
+	{
+		--_pRows;
+	}
+	p = pow(_pRows, 2);
+
 	_subPairs = _pairs / p;
 	_subNodes = sqrt(_subPairs);
 
@@ -356,11 +405,11 @@ void MpiGroupInit()
 	{
 		MPI_Comm_dup(MPI_COMM_WORLD, &_mpiCommActiveProcesses);
 	}
-    
-    if (mpiRank == 0)
-    {
-        cout << "remaining active processes: " << p << " / " << mpiSize << endl;
-    }
+
+	if (mpiRank == 0)
+	{
+		cout << "remaining active processes: " << p << " / " << mpiSize << endl;
+	}
 
 	//Create Cartesian Grid comm
 	int pDim[2] = { _pRows, _pRows };
