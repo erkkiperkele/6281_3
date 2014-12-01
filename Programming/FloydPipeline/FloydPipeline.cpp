@@ -13,9 +13,9 @@ using namespace std;
 vector<int> LoadInitialDistances();
 void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount, bool isDividing);
 
-//void GetRowMatrix(int *receivedRowMatrix);
-//void GetColMatrix(int *receivedColMatrix);
-void FloydOneToAll(int * subdistance);
+void GetRowMatrix(int *receivedRowMatrix);
+void GetColMatrix(int *receivedColMatrix);
+void FloydPipeline(int * subdistance);
 
 
 void PrintChrono(double &duration);
@@ -81,8 +81,8 @@ int main(int argc, char* argv[])
 	int *subdistance = new int[_subPairs];
 	MPI_Scatter(&distanceMatrix[0], _subPairs, MPI_INT, subdistance, _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
 
-	FloydOneToAll(subdistance);
-
+	FloydPipeline(subdistance);
+	
 	//Gather all submatrices into one
 	MPI_Gather(subdistance, _subPairs, MPI_INT, &distanceMatrix[0], _subPairs, MPI_INT, 0, _mpiCommActiveProcesses);
 
@@ -103,7 +103,7 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
-void FloydOneToAll(int * subdistance)
+void FloydPipeline(int * subdistance)
 {
 	//Calculate the submatrices
 	while (k < _pRows)
@@ -130,7 +130,7 @@ void FloydOneToAll(int * subdistance)
 				receivedRowDistance.assign(subdistance, subdistance + _subPairs);
 			}
 
-			MPI_Bcast(&receivedRowDistance[0], _subPairs, MPI_INT, k, _mpiCommCol);
+			GetRowMatrix(&receivedRowDistance[0]);
 
 			//PERF: Broadcast single col instead of all cols of submatrix
 			//Broadcast in cols
@@ -140,7 +140,7 @@ void FloydOneToAll(int * subdistance)
 				receivedColDistance.assign(subdistance, subdistance + _subPairs);
 			}
 
-			MPI_Bcast(&receivedColDistance[0], _subPairs, MPI_INT, k, _mpiCommRow);
+			GetColMatrix(&receivedColDistance[0]);
 
 			//Calculating the distance to intermediate node
 			int col = subk;
