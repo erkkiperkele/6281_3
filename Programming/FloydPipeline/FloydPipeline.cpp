@@ -90,6 +90,7 @@ int main(int argc, char* argv[])
 		DivideOrUnifyMatrix(&distanceMatrix[0], _pairs, p, false);
 
 		//Finalization (stop chrono, print time and results)
+        MPI_Barrier(_mpiCommActiveProcesses);
 		double endTime = MPI_Wtime();
 		double duration = endTime - startTime;
 		cout << "Duration: " << duration << " seconds" << endl;
@@ -101,7 +102,6 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
-//TODO: Bad copypasting from OneToAll
 void FloydPipeline(int * subdistance)
 {
 	//Calculate the submatrices
@@ -166,10 +166,11 @@ void FloydPipeline(int * subdistance)
 			++subk;
 		}
 		++k;
-		MPI_Barrier(_mpiCommActiveProcesses);
+//		MPI_Barrier(_mpiCommActiveProcesses);
 	}
 }
 
+//DEADLOCK: To verify but have a feeling it is because row and cols are in deadlock.
 //PERF: don't propagate full submatrix
 int* PropagateRow(int * subdistance)
 {
@@ -179,29 +180,38 @@ int* PropagateRow(int * subdistance)
 
 	MPI_Request sendRequestNext;
 	MPI_Request sendRequestPrevious;
+	MPI_Request recvRequest;
 	MPI_Status status;
 
 	if (_rowRank == k)
 	{
-		cout << "Rank | _rowRank: " << _cartRank << " | " << _rowRank << " - prepare data to send" << endl;
+		cout << "k: " << k << " - Rank " << _cartRank << " (r " << _rowRank << " | c " << _colRank << ")"
+            << " - prepare row to send" << endl;
 		receivedRowDistance.assign(subdistance, subdistance + _subPairs);
 	}
 
 	else
 	{
-		cout << "Rank | _rowRank: " << _cartRank << " | " << _rowRank << " - receive data from: " << k << endl;
 		int sender = _rowRank > k
 			? previous
 			: next;
-		MPI_Recv(&receivedRowDistance[0], _subPairs, MPI_INT, sender, 0, _mpiCommCol, &status);
+        
+        cout << "k: " << k << " - Rank " << _cartRank << " (r " << _rowRank << " | c " << _colRank << ")"
+            << " - receive row from: " << sender << endl;
+        
+		//TEST: Non blocking but results won't be right
+		MPI_Irecv(&receivedRowDistance[0], _subPairs, MPI_INT, sender, 0, _mpiCommCol, &recvRequest);
 	}
 
-	if (_rowRank >= k && next < _subNodes)
+	if (_rowRank >= k && next < _pRows)
 	{
+        cout << "k: " << k << " - Rank " << _cartRank << " (r " << _rowRank << " | c " << _colRank << ")"
+            << " - send row to next: " << next << "/" << _pRows << endl;
 		MPI_Isend(&receivedRowDistance[0], _subPairs, MPI_INT, next, 0, _mpiCommCol, &sendRequestNext);
 	}
 	if (_rowRank <= k && previous >= 0)
 	{
+        cout << "k: " << k << " - Rank " << _cartRank << " (r " << _rowRank << " | c " << _colRank << ")" << " - send row to previous: " << previous << "/" << _pRows << endl;
 		MPI_Isend(&receivedRowDistance[0], _subPairs, MPI_INT, previous, 0, _mpiCommCol, &sendRequestPrevious);
 	}
 
@@ -217,6 +227,7 @@ int* PropagateCol(int * subdistance)
 
 	MPI_Request sendRequestNext;
 	MPI_Request sendRequestPrevious;
+	MPI_Request recvRequest;
 	MPI_Status status;
 
 	if (_colRank == k)
@@ -226,11 +237,12 @@ int* PropagateCol(int * subdistance)
 
 	else
 	{
-		MPI_Recv(&receivedColDistance[0], _subPairs, MPI_INT, k, 0, _mpiCommRow, &status);
+        //TEST: Non blocking but results won't be right
+		MPI_Irecv(&receivedColDistance[0], _subPairs, MPI_INT, k, 0, _mpiCommRow, &recvRequest);
 	}
 
 	//Current rank sends on both directions
-	if (_colRank >= k && next < _subNodes)
+	if (_colRank >= k && next < _pRows)
 	{
 		MPI_Isend(&receivedColDistance[0], _subPairs, MPI_INT, next, 0, _mpiCommRow, &sendRequestNext);
 	}
