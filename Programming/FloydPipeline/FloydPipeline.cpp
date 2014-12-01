@@ -90,7 +90,6 @@ int main(int argc, char* argv[])
 		DivideOrUnifyMatrix(&distanceMatrix[0], _pairs, p, false);
 
 		//Finalization (stop chrono, print time and results)
-        MPI_Barrier(_mpiCommActiveProcesses);
 		double endTime = MPI_Wtime();
 		double duration = endTime - startTime;
 		cout << "Duration: " << duration << " seconds" << endl;
@@ -166,21 +165,21 @@ void FloydPipeline(int * subdistance)
 			++subk;
 		}
 		++k;
-//		MPI_Barrier(_mpiCommActiveProcesses);
+
+
+		//TEST ONLY: Defeats the purpose of pipelining but easier to read results at each step
+		//MPI_Barrier(_mpiCommActiveProcesses);
 	}
 }
 
-//DEADLOCK: To verify but have a feeling it is because row and cols are in deadlock.
-//PERF: don't propagate full submatrix
 int* PropagateRow(int * subdistance)
 {
-	int previous = _rowRank - 1;
-	int next = _rowRank + 1;
+	int upper = _rowRank - 1;
+	int lower = _rowRank + 1;
 	vector<int> receivedRowDistance(_subPairs);
 
 	MPI_Request sendRequestNext;
 	MPI_Request sendRequestPrevious;
-	MPI_Request recvRequest;
 	MPI_Status status;
 
 	if (_rowRank == k)
@@ -193,26 +192,27 @@ int* PropagateRow(int * subdistance)
 	else
 	{
 		int sender = _rowRank > k
-			? previous
-			: next;
+			? upper
+			: lower;
         
         cout << "k: " << k << " - Rank " << _cartRank << " (r " << _rowRank << " | c " << _colRank << ")"
             << " - receive row from: " << sender << endl;
         
-		//TEST: Non blocking but results won't be right
-		MPI_Irecv(&receivedRowDistance[0], _subPairs, MPI_INT, sender, 0, _mpiCommCol, &recvRequest);
+		MPI_Recv(&receivedRowDistance[0], _subPairs, MPI_INT, sender, 0, _mpiCommCol, &status);
+		//MPI_Irecv(&receivedRowDistance[0], _subPairs, MPI_INT, sender, 0, _mpiCommCol, &recvRequest);
 	}
 
-	if (_rowRank >= k && next < _pRows)
+	if (_rowRank >= k && lower < _pRows)
 	{
         cout << "k: " << k << " - Rank " << _cartRank << " (r " << _rowRank << " | c " << _colRank << ")"
-            << " - send row to next: " << next << "/" << _pRows << endl;
-		MPI_Isend(&receivedRowDistance[0], _subPairs, MPI_INT, next, 0, _mpiCommCol, &sendRequestNext);
+			<< " - send row to lower: " << lower << "/" << _pRows - 1 << endl;
+		MPI_Isend(&receivedRowDistance[0], _subPairs, MPI_INT, lower, 0, _mpiCommCol, &sendRequestNext);
 	}
-	if (_rowRank <= k && previous >= 0)
+	if (_rowRank <= k && upper >= 0)
 	{
-        cout << "k: " << k << " - Rank " << _cartRank << " (r " << _rowRank << " | c " << _colRank << ")" << " - send row to previous: " << previous << "/" << _pRows << endl;
-		MPI_Isend(&receivedRowDistance[0], _subPairs, MPI_INT, previous, 0, _mpiCommCol, &sendRequestPrevious);
+        cout << "k: " << k << " - Rank " << _cartRank << " (r " << _rowRank << " | c " << _colRank << ")"
+			<< " - send row to upper: " << upper << "/" << _pRows - 1 << endl;
+		MPI_Isend(&receivedRowDistance[0], _subPairs, MPI_INT, upper, 0, _mpiCommCol, &sendRequestPrevious);
 	}
 
 	return &receivedRowDistance[0];
@@ -221,13 +221,12 @@ int* PropagateRow(int * subdistance)
 //PERF: don't propagate full submatrix
 int* PropagateCol(int * subdistance)
 {
-	int previous = _colRank - 1;
-	int next = _colRank + 1;
+	int left = _colRank - 1;
+	int right = _colRank + 1;
 	vector<int> receivedColDistance(_subPairs);
 
 	MPI_Request sendRequestNext;
 	MPI_Request sendRequestPrevious;
-	MPI_Request recvRequest;
 	MPI_Status status;
 
 	if (_colRank == k)
@@ -237,20 +236,26 @@ int* PropagateCol(int * subdistance)
 
 	else
 	{
-        //TEST: Non blocking but results won't be right
-		MPI_Irecv(&receivedColDistance[0], _subPairs, MPI_INT, k, 0, _mpiCommRow, &recvRequest);
+		int sender = _colRank > k
+			? left
+			: right;
+
+		cout << "k: " << k << " - Rank " << _cartRank << " (r " << _rowRank << " | c " << _colRank << ")"
+			<< " - receive col from: " << sender << endl;
+
+		MPI_Recv(&receivedColDistance[0], _subPairs, MPI_INT, sender, 0, _mpiCommRow, &status);
 	}
 
 	//Current rank sends on both directions
-	if (_colRank >= k && next < _pRows)
+	if (_colRank >= k && right < _pRows)
 	{
-		MPI_Isend(&receivedColDistance[0], _subPairs, MPI_INT, next, 0, _mpiCommRow, &sendRequestNext);
+		MPI_Isend(&receivedColDistance[0], _subPairs, MPI_INT, right, 0, _mpiCommRow, &sendRequestNext);
 	}
 
 	//Other ranks send only to the direction opposite to the current rank (propagating the data)
-	if (_colRank <= k && previous >= 0)
+	if (_colRank <= k && left >= 0)
 	{
-		MPI_Isend(&receivedColDistance[0], _subPairs, MPI_INT, previous, 0, _mpiCommRow, &sendRequestPrevious);
+		MPI_Isend(&receivedColDistance[0], _subPairs, MPI_INT, left, 0, _mpiCommRow, &sendRequestPrevious);
 	}
 
 	return &receivedColDistance[0];
