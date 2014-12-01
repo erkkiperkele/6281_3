@@ -13,17 +13,13 @@ using namespace std;
 vector<int> LoadInitialDistances();
 void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount, bool isDividing);
 
-//void GetRowMatrix(int *receivedRowMatrix);
-//void GetColMatrix(int *receivedColMatrix);
 void FloydOneToAll(int * subdistance);
-
 
 void PrintChrono(double &duration);
 void PrintResults(int* distanceMatrix);
 void CreateGraph();
 
 void MpiGroupInit();
-
 
 int _nodes;				//Total number of nodes (sqrt(_pairs))
 int _pairs;				//Total number of pairs (matrix size)
@@ -238,16 +234,6 @@ void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount, boo
 		++prow;
 		i = prow * rowSize * subRowSize;
 	}
-}
-
-void GetRowMatrix(int *receivedRowMatrix)
-{
-	MPI_Bcast(receivedRowMatrix, _subPairs, MPI_INT, k, _mpiCommCol);
-}
-
-void GetColMatrix(int *receivedColMatrix)
-{
-	MPI_Bcast(receivedColMatrix, _subPairs, MPI_INT, k, _mpiCommRow);
 }
 
 void PrintChrono(double &duration)
