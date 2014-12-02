@@ -167,10 +167,6 @@ void FloydPipeline(int * subdistance)
             ++subk;
         }
         ++k;
-        
-        
-        //TEST ONLY: Defeats the purpose of pipelining but easier to read results at each step
-        //MPI_Barrier(_mpiCommActiveProcesses);
     }
 }
 
@@ -185,8 +181,6 @@ void PropagateRow(int * subdistance, vector<int> &receivedRowDistance)
     
     if (_rowRank == k)
     {
-        cout << "k: " << k << " - Rank " << _cartRank << " (r " << _rowRank << " | c " << _colRank << ")"
-        << " - prepare row to send" << endl;
         receivedRowDistance.assign(subdistance, subdistance + _subPairs);
     }
     
@@ -195,24 +189,15 @@ void PropagateRow(int * subdistance, vector<int> &receivedRowDistance)
         int sender = _rowRank > k
         ? upper
         : lower;
-        
-        cout << "k: " << k << " - Rank " << _cartRank << " (r " << _rowRank << " | c " << _colRank << ")"
-        << " - receive row from: " << sender << endl;
-        
         MPI_Recv(&receivedRowDistance[0], _subPairs, MPI_INT, sender, 0, _mpiCommCol, &status);
-        //MPI_Irecv(&receivedRowDistance[0], _subPairs, MPI_INT, sender, 0, _mpiCommCol, &recvRequest);
     }
     
     if (_rowRank >= k && lower < _pRows)
     {
-        cout << "k: " << k << " - Rank " << _cartRank << " (r " << _rowRank << " | c " << _colRank << ")"
-        << " - send row to lower: " << lower << "/" << _pRows - 1 << endl;
         MPI_Isend(&receivedRowDistance[0], _subPairs, MPI_INT, lower, 0, _mpiCommCol, &sendRequestNext);
     }
     if (_rowRank <= k && upper >= 0)
     {
-        cout << "k: " << k << " - Rank " << _cartRank << " (r " << _rowRank << " | c " << _colRank << ")"
-        << " - send row to upper: " << upper << "/" << _pRows - 1 << endl;
         MPI_Isend(&receivedRowDistance[0], _subPairs, MPI_INT, upper, 0, _mpiCommCol, &sendRequestPrevious);
     }
 }
@@ -237,10 +222,6 @@ void PropagateCol(int * subdistance, vector<int> &receivedColDistance)
         int sender = _colRank > k
         ? left
         : right;
-        
-        cout << "k: " << k << " - Rank " << _cartRank << " (r " << _rowRank << " | c " << _colRank << ")"
-        << " - receive col from: " << sender << endl;
-        
         MPI_Recv(&receivedColDistance[0], _subPairs, MPI_INT, sender, 0, _mpiCommRow, &status);
     }
     
