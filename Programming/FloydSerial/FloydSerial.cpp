@@ -72,7 +72,7 @@ int main(int argc, char* argv[])
 void PrintChrono(double &duration)
 {
 	ofstream myfile;
-	myfile.open("./FloydSerial.csv", ios::app);
+	myfile.open("./FloydSerialChrono.csv", ios::app);
 	myfile << 1 << "\t" << _nodes << "\t" << duration << "\n";
 	myfile.close();
 }
