@@ -10,6 +10,11 @@
 
 using namespace std;
 
+//TODO:
+//MISMATCH!!! Output file is similar to the 2 others, but not exactly the same. Concurrency?
+//Don't send the whole submatrix, but just the rows and cols...
+
+
 vector<int> LoadInitialDistances();
 void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount, bool isDividing);
 
