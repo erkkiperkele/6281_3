@@ -101,6 +101,8 @@ int main(int argc, char* argv[])
 
 void FloydOneToAll(int * subdistance)
 {
+    vector<int> receivedRowDistance(_subPairs);
+    vector<int> receivedColDistance(_subPairs);
 	//Calculate the submatrices
 	while (k < _pRows)
 	{
@@ -120,7 +122,6 @@ void FloydOneToAll(int * subdistance)
 		{
 			//PERF: Broadcast 2 values only instead of 4!!
 			//Broadcast in rows
-			vector<int> receivedRowDistance(_subPairs);
 			if (_rowRank == k)
 			{
 				receivedRowDistance.assign(subdistance, subdistance + _subPairs);
@@ -130,7 +131,6 @@ void FloydOneToAll(int * subdistance)
 
 			//PERF: Broadcast single col instead of all cols of submatrix
 			//Broadcast in cols
-			vector<int> receivedColDistance(_subPairs);
 			if (_colRank == k)
 			{
 				receivedColDistance.assign(subdistance, subdistance + _subPairs);

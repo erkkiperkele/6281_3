@@ -11,7 +11,6 @@
 using namespace std;
 
 //TODO:
-//MISMATCH!!! Output file is similar to the 2 others, but not exactly the same. Concurrency?
 //Don't send the whole submatrix, but just the rows and cols...
 
 
@@ -108,6 +107,9 @@ int main(int argc, char* argv[])
 
 void FloydPipeline(int * subdistance)
 {
+    vector<int> receivedColDistance(_subPairs);
+    vector<int> receivedRowDistance(_subPairs);
+    
     //Calculate the submatrices
     while (k < _pRows)
     {
@@ -126,11 +128,9 @@ void FloydPipeline(int * subdistance)
         while (subk < _subNodes)
         {
             //Propagate to rows
-            vector<int> receivedRowDistance(_subPairs);
             PropagateRow(&subdistance[0], receivedRowDistance);
             
             //Propagate to cols
-            vector<int> receivedColDistance(_subPairs);
             PropagateCol(&subdistance[0], receivedColDistance);
             
             //Calculating the distance to intermediate node
@@ -175,10 +175,13 @@ void FloydPipeline(int * subdistance)
     }
 }
 
+//PERF: don't propagate full submatrix
+//PERF: Could use a non-blocking receive and wait for both cols and rows in parallel, then do the Isend.
 void PropagateRow(int * subdistance, vector<int> &receivedRowDistance)
 {
     int upper = _rowRank - 1;
     int lower = _rowRank + 1;
+    int * toSend = &receivedRowDistance[0];
     
     MPI_Request sendRequestNext;
     MPI_Request sendRequestPrevious;
@@ -199,15 +202,16 @@ void PropagateRow(int * subdistance, vector<int> &receivedRowDistance)
     
     if (_rowRank >= k && lower < _pRows)
     {
-        MPI_Isend(&receivedRowDistance[0], _subPairs, MPI_INT, lower, 0, _mpiCommCol, &sendRequestNext);
+        MPI_Isend(toSend, _subPairs, MPI_INT, lower, 0, _mpiCommCol, &sendRequestNext);
     }
     if (_rowRank <= k && upper >= 0)
     {
-        MPI_Isend(&receivedRowDistance[0], _subPairs, MPI_INT, upper, 0, _mpiCommCol, &sendRequestPrevious);
+        MPI_Isend(toSend, _subPairs, MPI_INT, upper, 0, _mpiCommCol, &sendRequestPrevious);
     }
 }
 
 //PERF: don't propagate full submatrix
+//PERF: Could use a non-blocking receive and wait for both cols and rows in parallel, then do the Isend.
 void PropagateCol(int * subdistance, vector<int> &receivedColDistance)
 {
     int left = _colRank - 1;
@@ -301,7 +305,7 @@ void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount, boo
 void PrintChrono(double &duration)
 {
     ofstream myfile;
-    myfile.open("./FloydOneToAllChrono.csv", ios::app);
+    myfile.open("./FloydPipelineChrono.csv", ios::app);
     myfile << p << "\t" << _nodes << "\t" << duration << "\n";
     myfile.close();
 }
