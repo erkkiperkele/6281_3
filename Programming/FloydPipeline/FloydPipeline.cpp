@@ -14,6 +14,7 @@ vector<int> LoadInitialDistances();
 void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount, bool isDividing);
 
 void FloydPipeline(int * subdistance);
+void ReceiveDataConcurrently(vector<int> &receivedRowDistance,vector<int> &receivedColDistance);
 void PropagateRow(int * subdistance, vector<int> &row, int subk);
 void PropagateCol(int * subdistance, vector<int> &col, int subk);
 
@@ -123,6 +124,10 @@ void FloydPipeline(int * subdistance)
         int subk = 0;
         while (subk < _subNodes)
         {
+            //TEST TEST TEST
+            ReceiveDataConcurrently(receivedRowDistance,receivedColDistance);
+
+            
             //Propagate to rows
             PropagateRow(&subdistance[0], receivedRowDistance, subk);
             
@@ -171,7 +176,46 @@ void FloydPipeline(int * subdistance)
     }
 }
 
-//PERF: Could use a non-blocking receive and wait for both cols and rows in parallel, then do the Isend.
+void ReceiveDataConcurrently(vector<int> &receivedRowDistance,vector<int> &receivedColDistance)
+{
+    int upper = _rowRank - 1;
+    int lower = _rowRank + 1;
+    
+    MPI_Request recvRequestRow;
+    MPI_Status statusRow;
+    
+    
+    int left = _colRank - 1;
+    int right = _colRank + 1;
+    
+    MPI_Request recvRequestCol;
+    MPI_Status statusCol;
+    
+    
+    if (_rowRank != k)
+    {
+        int sender = _rowRank > k
+        ? upper
+        : lower;
+        MPI_Irecv(&receivedRowDistance[0], _subNodes, MPI_INT, sender, 0, _mpiCommCol, &recvRequestRow);
+    }
+
+    if (_colRank != k)
+    {
+        int sender = _colRank > k
+        ? left
+        : right;
+        MPI_Irecv(&receivedColDistance[0], _subNodes, MPI_INT, sender, 0, _mpiCommRow, &recvRequestCol);
+        MPI_Wait(&recvRequestCol, &statusCol);
+    }
+    
+    if (_rowRank != k)
+    {
+        MPI_Wait(&recvRequestRow, &statusRow);
+    }
+    
+}
+
 void PropagateRow(int * subdistance, vector<int> &receivedRowDistance, int subk)
 {
     int upper = _rowRank - 1;
@@ -180,7 +224,6 @@ void PropagateRow(int * subdistance, vector<int> &receivedRowDistance, int subk)
     
     MPI_Request sendRequestNext;
     MPI_Request sendRequestPrevious;
-    MPI_Status status;
     
     if (_rowRank == k)
     {
@@ -194,14 +237,6 @@ void PropagateRow(int * subdistance, vector<int> &receivedRowDistance, int subk)
         }
     }
     
-    else
-    {
-        int sender = _rowRank > k
-        ? upper
-        : lower;
-        MPI_Recv(&receivedRowDistance[0], _subNodes, MPI_INT, sender, 0, _mpiCommCol, &status);
-    }
-    
     if (_rowRank >= k && lower < _pRows)
     {
         MPI_Isend(toSend, _subNodes, MPI_INT, lower, 0, _mpiCommCol, &sendRequestNext);
@@ -212,7 +247,6 @@ void PropagateRow(int * subdistance, vector<int> &receivedRowDistance, int subk)
     }
 }
 
-//PERF: Could use a non-blocking receive and wait for both cols and rows in parallel, then do the Isend.
 void PropagateCol(int * subdistance, vector<int> &receivedColDistance, int subk)
 {
     int left = _colRank - 1;
@@ -220,7 +254,6 @@ void PropagateCol(int * subdistance, vector<int> &receivedColDistance, int subk)
     
     MPI_Request sendRequestNext;
     MPI_Request sendRequestPrevious;
-    MPI_Status status;
     
     if (_colRank == k)
     {
@@ -232,14 +265,6 @@ void PropagateCol(int * subdistance, vector<int> &receivedColDistance, int subk)
             i+=_subNodes;
             ++j;
         }
-    }
-    
-    else
-    {
-        int sender = _colRank > k
-        ? left
-        : right;
-        MPI_Recv(&receivedColDistance[0], _subNodes, MPI_INT, sender, 0, _mpiCommRow, &status);
     }
     
     //Current rank sends on both directions
