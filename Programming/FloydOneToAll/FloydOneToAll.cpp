@@ -101,8 +101,8 @@ int main(int argc, char* argv[])
 
 void FloydOneToAll(int * subdistance)
 {
-    vector<int> receivedRowDistance(_subPairs);
-    vector<int> receivedColDistance(_subPairs);
+    vector<int> receivedRowDistance(_subNodes);
+    vector<int> receivedColDistance(_subNodes);
 	//Calculate the submatrices
 	while (k < _pRows)
 	{
@@ -111,6 +111,7 @@ void FloydOneToAll(int * subdistance)
 		{
 			cout << "iteration " << k + 1 << "/" << _pRows << endl;
 		}
+        
 		////Process position in row (x) and col (y)
 		int prow = _cartRank / _pRows;
 		int pcol = _cartRank % _pRows;
@@ -120,32 +121,44 @@ void FloydOneToAll(int * subdistance)
 		int subk = 0;
 		while (subk < _subNodes)
 		{
-			//PERF: Broadcast 2 values only instead of 4!!
 			//Broadcast in rows
 			if (_rowRank == k)
 			{
-				receivedRowDistance.assign(subdistance, subdistance + _subPairs);
+                int j=0;
+                int i= subk*_subNodes;
+                while ( i< (subk*_subNodes) + _subNodes)
+                {
+                    receivedRowDistance[j] = subdistance[i];
+                    ++j;
+                    ++i;
+                }
 			}
 
-			MPI_Bcast(&receivedRowDistance[0], _subPairs, MPI_INT, k, _mpiCommCol);
+			MPI_Bcast(&receivedRowDistance[0], _subNodes, MPI_INT, k, _mpiCommCol);
 
-			//PERF: Broadcast single col instead of all cols of submatrix
 			//Broadcast in cols
 			if (_colRank == k)
 			{
-				receivedColDistance.assign(subdistance, subdistance + _subPairs);
+                int i = subk;
+                int j =0;
+                while (i<_subPairs)
+                {
+                    receivedColDistance[j] = subdistance[i];
+                    i+=_subNodes;
+                    ++j;
+                }
 			}
 
-			MPI_Bcast(&receivedColDistance[0], _subPairs, MPI_INT, k, _mpiCommRow);
-
+			MPI_Bcast(&receivedColDistance[0], _subNodes, MPI_INT, k, _mpiCommRow);
+            
 			//Calculating the distance to intermediate node
-			int col = subk;
+			int col = 0;
 			int currentSubNode = 0;
-			while (col < _subPairs)
+			while (col < _subNodes)
 			{
 				//calculating the distance from intermediate node to destination
-				int row = subk * _subNodes;
-				while (row < (_subNodes * (subk + 1)))
+				int row = 0;
+				while (row < _subNodes)
 				{
 					int subcol = currentSubNode / _subNodes;
 					int subrow = currentSubNode % _subNodes;
@@ -157,12 +170,11 @@ void FloydOneToAll(int * subdistance)
 					{
 
 						int newPathDistance = receivedColDistance[col] + receivedRowDistance[row];
-
 						if (newPathDistance < subdistance[currentSubNode])
 						{
 							subdistance[currentSubNode] = newPathDistance;
 						}
-
+                        
 						//-1 means there's no connection. Therefore any other value is better
 						if (subdistance[currentSubNode] < 0)
 						{
@@ -172,7 +184,7 @@ void FloydOneToAll(int * subdistance)
 					++row;
 					++currentSubNode;
 				}
-				col += _subNodes;
+				++col;
 			}
 			++subk;
 		}
