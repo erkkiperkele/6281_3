@@ -10,16 +10,12 @@
 
 using namespace std;
 
-//TODO:
-//Don't send the whole submatrix, but just the rows and cols...
-
-
 vector<int> LoadInitialDistances();
 void DivideOrUnifyMatrix(int * matrix, int matrixSize, int submatricesCount, bool isDividing);
 
 void FloydPipeline(int * subdistance);
-void PropagateRow(int * subdistance, vector<int> &row);
-void PropagateCol(int * subdistance, vector<int> &col);
+void PropagateRow(int * subdistance, vector<int> &row, int subk);
+void PropagateCol(int * subdistance, vector<int> &col, int subk);
 
 void PrintChrono(double &duration);
 void PrintResults(int* distanceMatrix);
@@ -128,19 +124,19 @@ void FloydPipeline(int * subdistance)
         while (subk < _subNodes)
         {
             //Propagate to rows
-            PropagateRow(&subdistance[0], receivedRowDistance);
+            PropagateRow(&subdistance[0], receivedRowDistance, subk);
             
             //Propagate to cols
-            PropagateCol(&subdistance[0], receivedColDistance);
+            PropagateCol(&subdistance[0], receivedColDistance, subk);
             
             //Calculating the distance to intermediate node
-            int col = subk;
+            int col = 0;
             int currentSubNode = 0;
-            while (col < _subPairs)
+            while (col < _subNodes)
             {
                 //calculating the distance from intermediate node to destination
-                int row = subk * _subNodes;
-                while (row < (_subNodes * (subk + 1)))
+                int row = 0;
+                while (row < _subNodes)
                 {
                     int subcol = currentSubNode / _subNodes;
                     int subrow = currentSubNode % _subNodes;
@@ -167,7 +163,7 @@ void FloydPipeline(int * subdistance)
                     ++row;
                     ++currentSubNode;
                 }
-                col += _subNodes;
+                ++col;
             }
             ++subk;
         }
@@ -175,9 +171,8 @@ void FloydPipeline(int * subdistance)
     }
 }
 
-//PERF: don't propagate full submatrix
 //PERF: Could use a non-blocking receive and wait for both cols and rows in parallel, then do the Isend.
-void PropagateRow(int * subdistance, vector<int> &receivedRowDistance)
+void PropagateRow(int * subdistance, vector<int> &receivedRowDistance, int subk)
 {
     int upper = _rowRank - 1;
     int lower = _rowRank + 1;
@@ -189,7 +184,14 @@ void PropagateRow(int * subdistance, vector<int> &receivedRowDistance)
     
     if (_rowRank == k)
     {
-        receivedRowDistance.assign(subdistance, subdistance + _subPairs);
+        int j=0;
+        int i= subk*_subNodes;
+        while ( i< (subk*_subNodes) + _subNodes)
+        {
+            receivedRowDistance[j] = subdistance[i];
+            ++j;
+            ++i;
+        }
     }
     
     else
@@ -197,22 +199,21 @@ void PropagateRow(int * subdistance, vector<int> &receivedRowDistance)
         int sender = _rowRank > k
         ? upper
         : lower;
-        MPI_Recv(&receivedRowDistance[0], _subPairs, MPI_INT, sender, 0, _mpiCommCol, &status);
+        MPI_Recv(&receivedRowDistance[0], _subNodes, MPI_INT, sender, 0, _mpiCommCol, &status);
     }
     
     if (_rowRank >= k && lower < _pRows)
     {
-        MPI_Isend(toSend, _subPairs, MPI_INT, lower, 0, _mpiCommCol, &sendRequestNext);
+        MPI_Isend(toSend, _subNodes, MPI_INT, lower, 0, _mpiCommCol, &sendRequestNext);
     }
     if (_rowRank <= k && upper >= 0)
     {
-        MPI_Isend(toSend, _subPairs, MPI_INT, upper, 0, _mpiCommCol, &sendRequestPrevious);
+        MPI_Isend(toSend, _subNodes, MPI_INT, upper, 0, _mpiCommCol, &sendRequestPrevious);
     }
 }
 
-//PERF: don't propagate full submatrix
 //PERF: Could use a non-blocking receive and wait for both cols and rows in parallel, then do the Isend.
-void PropagateCol(int * subdistance, vector<int> &receivedColDistance)
+void PropagateCol(int * subdistance, vector<int> &receivedColDistance, int subk)
 {
     int left = _colRank - 1;
     int right = _colRank + 1;
@@ -223,7 +224,14 @@ void PropagateCol(int * subdistance, vector<int> &receivedColDistance)
     
     if (_colRank == k)
     {
-        receivedColDistance.assign(subdistance, subdistance + _subPairs);
+        int i = subk;
+        int j =0;
+        while (i<_subPairs)
+        {
+            receivedColDistance[j] = subdistance[i];
+            i+=_subNodes;
+            ++j;
+        }
     }
     
     else
@@ -231,19 +239,19 @@ void PropagateCol(int * subdistance, vector<int> &receivedColDistance)
         int sender = _colRank > k
         ? left
         : right;
-        MPI_Recv(&receivedColDistance[0], _subPairs, MPI_INT, sender, 0, _mpiCommRow, &status);
+        MPI_Recv(&receivedColDistance[0], _subNodes, MPI_INT, sender, 0, _mpiCommRow, &status);
     }
     
     //Current rank sends on both directions
     if (_colRank >= k && right < _pRows)
     {
-        MPI_Isend(&receivedColDistance[0], _subPairs, MPI_INT, right, 0, _mpiCommRow, &sendRequestNext);
+        MPI_Isend(&receivedColDistance[0], _subNodes, MPI_INT, right, 0, _mpiCommRow, &sendRequestNext);
     }
     
     //Other ranks send only to the direction opposite to the current rank (propagating the data)
     if (_colRank <= k && left >= 0)
     {
-        MPI_Isend(&receivedColDistance[0], _subPairs, MPI_INT, left, 0, _mpiCommRow, &sendRequestPrevious);
+        MPI_Isend(&receivedColDistance[0], _subNodes, MPI_INT, left, 0, _mpiCommRow, &sendRequestPrevious);
     }
 }
 
