@@ -124,9 +124,8 @@ void FloydPipeline(int * subdistance)
         int subk = 0;
         while (subk < _subNodes)
         {
-            //TEST TEST TEST
+            //Receive rows and cols concurrently
             ReceiveDataConcurrently(receivedRowDistance,receivedColDistance);
-
             
             //Propagate to rows
             PropagateRow(&subdistance[0], receivedRowDistance, subk);
@@ -199,7 +198,7 @@ void ReceiveDataConcurrently(vector<int> &receivedRowDistance,vector<int> &recei
         : lower;
         MPI_Irecv(&receivedRowDistance[0], _subNodes, MPI_INT, sender, 0, _mpiCommCol, &recvRequestRow);
     }
-
+    
     if (_colRank != k)
     {
         int sender = _colRank > k
